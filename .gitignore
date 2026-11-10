@@ -1,0 +1,10 @@
+/bin/
+/dist/
+*.test
+*.out
+coverage.txt
+coverage.html
+/tmp/
+.env
+*.pem
+*.key
