@@ -31,9 +31,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: securego/gosec@5eb1d104ef85ff2c905c877eb600e8c1dee33a22 # v2.30.0
+      # The gosec container image ships an older Go than go.mod requires, so
+      # build the pinned release with the toolchain selected from go.mod.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          args: ./...
+          go-version-file: go.mod
+      - run: go install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
+      - run: |
+          gosec_bin="$(go env GOPATH)/bin/gosec"
+          "$gosec_bin" ./...
 
   trivy-fs:
     runs-on: ubuntu-latest
