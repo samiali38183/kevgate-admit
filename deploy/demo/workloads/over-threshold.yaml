@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: over-threshold
+  labels:
+    app: over-threshold
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: over-threshold
+  template:
+    metadata:
+      labels:
+        app: over-threshold
+    spec:
+      containers:
+        - name: app
+          image: registry.example.com/demo/over-threshold@sha256:3333333333333333333333333333333333333333333333333333333333333333
+          command: ["sleep", "3600"]

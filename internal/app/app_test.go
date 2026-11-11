@@ -18,6 +18,9 @@ import (
 	"time"
 
 	admissionv1 "k8s.io/api/admission/v1"
+	"sigs.k8s.io/yaml"
+
+	"github.com/samiali38183/kevgate-admit/internal/policy"
 )
 
 const (
@@ -447,4 +450,45 @@ func TestSignalContextCancels(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("context not cancelled by stop")
 	}
+}
+
+// The Helm values used by the demo embed the policy; keep them identical to
+// deploy/demo/policy.yaml so docs and demo cannot drift apart.
+func TestDemoValuesPolicyMatchesPolicyFile(t *testing.T) {
+	values, err := os.ReadFile(demoPath("values-demo.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Policy json.RawMessage `json:"policy"`
+	}
+	if err := yaml.Unmarshal(values, &v); err != nil {
+		t.Fatal(err)
+	}
+	fromValues, err := policy.Parse(mustYAML(t, v.Policy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.ReadFile(demoPath("policy.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fromFile, err := policy.Parse(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := json.Marshal(fromValues)
+	b, _ := json.Marshal(fromFile)
+	if !bytes.Equal(a, b) {
+		t.Fatalf("values-demo.yaml policy differs from policy.yaml:\n%s\n%s", a, b)
+	}
+}
+
+func mustYAML(t *testing.T, j json.RawMessage) []byte {
+	t.Helper()
+	b, err := yaml.JSONToYAML(j)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

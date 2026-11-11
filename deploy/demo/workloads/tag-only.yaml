@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tag-only
+  labels:
+    app: tag-only
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tag-only
+  template:
+    metadata:
+      labels:
+        app: tag-only
+    spec:
+      containers:
+        - name: app
+          image: registry.example.com/demo/clean:latest
+          command: ["sleep", "3600"]

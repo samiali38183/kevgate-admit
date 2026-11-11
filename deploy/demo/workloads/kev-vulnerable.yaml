@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kev-vulnerable
+  labels:
+    app: kev-vulnerable
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kev-vulnerable
+  template:
+    metadata:
+      labels:
+        app: kev-vulnerable
+    spec:
+      containers:
+        - name: app
+          image: registry.example.com/demo/kev-vulnerable@sha256:2222222222222222222222222222222222222222222222222222222222222222
+          command: ["sleep", "3600"]

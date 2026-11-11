@@ -1,0 +1,38 @@
+# Helm values for the kind demo. The policy block must match policy.yaml
+# (a unit test checks that).
+image:
+  repository: kevgate-admit
+  tag: demo
+  pullPolicy: Never
+replicaCount: 1
+failurePolicy: Fail
+kev:
+  existingConfigMap: demo-kev
+evidence:
+  existingConfigMap: demo-evidence
+reloadInterval: 5s
+podDisruptionBudget:
+  enabled: false
+policy:
+  version: 1
+  mode: enforce
+  default:
+    requireDigest: true
+    requireEvidence: deny
+    denyKev: true
+  namespaces:
+    demo-enforce:
+      denyKev: true
+      maxRisk: 40
+      requireDigest: true
+      requireEvidence: deny
+      allowedRegistries:
+        - registry.example.com/demo
+    demo-audit:
+      mode: audit
+      denyKev: true
+      maxRisk: 40
+      requireDigest: true
+      requireEvidence: deny
+      allowedRegistries:
+        - registry.example.com/demo
