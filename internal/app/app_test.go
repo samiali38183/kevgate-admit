@@ -72,18 +72,23 @@ func get(t *testing.T, url string) (int, string) {
 
 func start(t *testing.T, policyFile string) *server {
 	t.Helper()
+	return startWith(t, policyFile, demoPath("reports"))
+}
+
+func startWith(t *testing.T, policyFile, evidenceDir string, extra ...string) *server {
+	t.Helper()
 	dir := t.TempDir()
 	if policyFile == "" {
 		policyFile = demoPath("policy.yaml")
 	}
 	ca := filepath.Join(dir, "ca.pem")
-	cfg, err := ParseServeFlags([]string{
+	cfg, err := ParseServeFlags(append([]string{
 		"-listen", "127.0.0.1:0", "-metrics-listen", "127.0.0.1:0",
 		"-self-signed", "-self-signed-hosts", "localhost,127.0.0.1", "-self-signed-ca-out", ca,
 		"-policy-file", policyFile, "-kev-file", demoPath("kev-demo.json"),
-		"-evidence-dir", demoPath("reports"),
+		"-evidence-dir", evidenceDir,
 		"-reload-interval", "50ms", "-shutdown-timeout", "2s",
-	}, io.Discard)
+	}, extra...), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,6 +353,7 @@ func TestParseServeFlags(t *testing.T) {
 		{"no policy", []string{"-self-signed", "-kev-file", "k", "-evidence-dir", "d"}, "-policy-file"},
 		{"no kev", []string{"-self-signed", "-policy-file", "p", "-evidence-dir", "d"}, "-kev-file"},
 		{"no evidence", []string{"-self-signed", "-policy-file", "p", "-kev-file", "k"}, "-evidence-dir"},
+		{"key without dir", []string{"-self-signed", "-policy-file", "p", "-kev-file", "k", "-evidence-url", "http://x", "-evidence-public-key-file", "k.pem"}, "-evidence-public-key-file"},
 		{"bad fail mode", append([]string{"-fail-mode", "maybe"}, ok...), "-fail-mode"},
 		{"bad duration", append([]string{"-lookup-timeout", "0s"}, ok...), "positive"},
 		{"stray arg", append(ok, "extra"), "unexpected argument"},

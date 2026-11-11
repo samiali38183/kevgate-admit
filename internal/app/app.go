@@ -23,6 +23,7 @@ import (
 	"github.com/samiali38183/kevgate-admit/internal/admission"
 	"github.com/samiali38183/kevgate-admit/internal/epss"
 	"github.com/samiali38183/kevgate-admit/internal/evidence"
+	"github.com/samiali38183/kevgate-admit/internal/evsign"
 	"github.com/samiali38183/kevgate-admit/internal/kev"
 	"github.com/samiali38183/kevgate-admit/internal/metrics"
 	"github.com/samiali38183/kevgate-admit/internal/policy"
@@ -49,6 +50,10 @@ type Config struct {
 	EvidenceDir   string
 	EvidenceURL   string
 	EvidenceToken string // path to a file holding the token
+	// EvidencePublicKey is a PEM file of trusted report-signing public keys.
+	// When set, report signatures are verified; policies decide with
+	// requireSignedEvidence.
+	EvidencePublicKey string
 
 	FailMode        policy.FailMode
 	EvalTimeout     time.Duration
@@ -85,6 +90,12 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return kevRefresh(ctx, args[1:], stdout, stderr)
 	case "check-policy":
 		return checkPolicy(args[1:], stdout, stderr)
+	case "keygen":
+		return keygen(args[1:], stdout, stderr)
+	case "sign-report":
+		return signReport(args[1:], stdout, stderr)
+	case "verify-report":
+		return verifyReport(args[1:], stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, "kevgate-admit", Version)
 		return 0
@@ -104,6 +115,9 @@ commands:
   serve         run the admission webhook
   kev-refresh   download and validate the CISA KEV catalog
   check-policy  validate a policy file
+  keygen        create a report-signing key pair (Ed25519 or ECDSA P-256)
+  sign-report   write a detached signature next to each scan report
+  verify-report check a report signature offline
   version       print the version
 `)
 }
@@ -127,6 +141,7 @@ func ParseServeFlags(args []string, out io.Writer) (Config, error) {
 	fs.StringVar(&c.EvidenceDir, "evidence-dir", "", "directory of Trivy reports named <algo>-<hex>.json")
 	fs.StringVar(&c.EvidenceURL, "evidence-url", "", "optional kevgate base URL used when no report file exists")
 	fs.StringVar(&c.EvidenceToken, "evidence-token-file", "", "file holding a bearer token for -evidence-url")
+	fs.StringVar(&c.EvidencePublicKey, "evidence-public-key-file", "", "PEM public key(s) (Ed25519 or ECDSA P-256) that sign reports; enables <report>.json.sig verification for policies with requireSignedEvidence")
 	fs.StringVar(&fail, "fail-mode", "closed", "closed: deny when the evidence source fails; open: allow with a warning")
 	fs.DurationVar(&c.EvalTimeout, "eval-timeout", admission.DefaultEvalTimeout, "time budget per admission request (keep below the webhook timeoutSeconds)")
 	fs.DurationVar(&c.LookupTimeout, "lookup-timeout", admission.DefaultLookupTimeout, "time budget per evidence lookup")
@@ -162,6 +177,8 @@ func ParseServeFlags(args []string, out io.Writer) (Config, error) {
 		return c, errors.New("-kev-file is required")
 	case c.EvidenceDir == "" && c.EvidenceURL == "":
 		return c, errors.New("-evidence-dir or -evidence-url is required")
+	case c.EvidencePublicKey != "" && c.EvidenceDir == "":
+		return c, errors.New("-evidence-public-key-file needs -evidence-dir (signatures are files next to the reports)")
 	case c.ReloadInterval <= 0 || c.EvalTimeout <= 0 || c.LookupTimeout <= 0:
 		return c, errors.New("durations must be positive")
 	}
@@ -216,6 +233,9 @@ func Serve(ctx context.Context, cfg Config, log *slog.Logger, ready chan<- Addrs
 	provider, err := buildProvider(cfg)
 	if err != nil {
 		return err
+	}
+	if pol.Get().RequiresSignedEvidence() && cfg.EvidencePublicKey == "" {
+		log.Warn("the policy sets requireSignedEvidence but no -evidence-public-key-file is configured: every report will be treated as unauthenticated")
 	}
 
 	var certs *tlsutil.Reloader
@@ -315,7 +335,7 @@ func Serve(ctx context.Context, cfg Config, log *slog.Logger, ready chan<- Addrs
 	go func() { errc <- wrapServe(metSrv.Serve(metLn)) }()
 	log.Info("kevgate-admit started",
 		"version", Version, "admission", admLn.Addr().String(), "metrics", metLn.Addr().String(),
-		"fail_mode", string(cfg.FailMode), "provider", provider.Name(), "kev_entries", catalog.Get().Len())
+		"fail_mode", string(cfg.FailMode), "provider", provider.Name(), "evidence_signatures", cfg.EvidencePublicKey != "", "kev_entries", catalog.Get().Len())
 	if ready != nil {
 		ready <- Addrs{Admission: admLn.Addr().String(), Metrics: metLn.Addr().String(), CAPEM: caPEM}
 	}
@@ -361,7 +381,17 @@ func buildProvider(cfg Config) (evidence.Provider, error) {
 		if err != nil || !fi.IsDir() {
 			return nil, fmt.Errorf("-evidence-dir %q is not a readable directory", cfg.EvidenceDir)
 		}
-		chain = append(chain, &evidence.DirProvider{Dir: cfg.EvidenceDir})
+		dp := &evidence.DirProvider{Dir: cfg.EvidenceDir}
+		if cfg.EvidencePublicKey != "" {
+			data, err := os.ReadFile(cfg.EvidencePublicKey)
+			if err != nil {
+				return nil, fmt.Errorf("-evidence-public-key-file: %w", err)
+			}
+			if dp.Verifier, err = evsign.NewVerifier(data); err != nil {
+				return nil, fmt.Errorf("-evidence-public-key-file: %w", err)
+			}
+		}
+		chain = append(chain, dp)
 	}
 	if cfg.EvidenceURL != "" {
 		p := &evidence.HTTPProvider{BaseURL: cfg.EvidenceURL, Client: &http.Client{Timeout: cfg.LookupTimeout}}

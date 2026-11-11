@@ -42,6 +42,12 @@ jobs:
         # what is expected. The chart uses tls.mode=helm (generated CA).
         run: deploy/demo/demo.sh --use-current-context --out "$RUNNER_TEMP/demo-out" 2>&1 | tee "$RUNNER_TEMP/demo-transcript.txt"
         shell: bash
+      - name: failure modes, webhook down with failurePolicy Fail and Ignore, then recovery
+        # outage.sh scales the webhook to zero, asserts the API server rejects (Fail)
+        # or admits (Ignore) a Pod, checks the excluded namespaces, restores the
+        # webhook and asserts that allow and deny decisions resume.
+        run: deploy/demo/outage.sh --out "$RUNNER_TEMP/demo-out" 2>&1 | tee "$RUNNER_TEMP/outage-transcript.txt"
+        shell: bash
       - name: collect diagnostics
         if: always()
         run: |
@@ -56,3 +62,4 @@ jobs:
           path: |
             ${{ runner.temp }}/demo-out
             ${{ runner.temp }}/demo-transcript.txt
+            ${{ runner.temp }}/outage-transcript.txt

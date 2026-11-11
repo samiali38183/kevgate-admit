@@ -64,6 +64,13 @@ evidence:
   existingConfigMap: ""
   # Alternatively mount a PersistentVolumeClaim populated by a scan pipeline.
   existingClaim: ""
+  # Trusted public key(s) for report signatures (PEM, Ed25519 or ECDSA P-256).
+  # When set, <digest>.json.sig files next to the reports are verified, and
+  # policy rules with requireSignedEvidence ignore unsigned or badly signed
+  # reports. Create it with: kubectl -n NS create configmap NAME --from-file=evidence-public-key.pem=pub.pem
+  publicKey:
+    existingConfigMap: ""
+    key: evidence-public-key.pem
 
 epss:
   enabled: false

@@ -23,6 +23,7 @@ cover:
 fuzz:
 	$(GO) test ./internal/trivy -run '^$$' -fuzz FuzzParse -fuzztime 30s
 	$(GO) test ./internal/admission -run '^$$' -fuzz FuzzDecodeAndExtract -fuzztime 30s
+	$(GO) test ./internal/imageref -run '^$$' -fuzz FuzzParse -fuzztime 30s
 
 vet:
 	$(GO) vet $(PKGS)

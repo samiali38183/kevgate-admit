@@ -57,6 +57,9 @@ spec:
             - --policy-file=/config/policy/policy.yaml
             - --kev-file=/config/kev/{{ .Values.kev.key }}
             - --evidence-dir=/evidence
+            {{- if .Values.evidence.publicKey.existingConfigMap }}
+            - --evidence-public-key-file=/config/evidence-key/{{ .Values.evidence.publicKey.key }}
+            {{- end }}
             {{- if .Values.epss.enabled }}
             - --epss-file=/config/epss/{{ .Values.epss.key }}
             {{- end }}
@@ -106,6 +109,11 @@ spec:
             - name: evidence
               mountPath: /evidence
               readOnly: true
+            {{- if .Values.evidence.publicKey.existingConfigMap }}
+            - name: evidence-key
+              mountPath: /config/evidence-key
+              readOnly: true
+            {{- end }}
             {{- if .Values.epss.enabled }}
             - name: epss
               mountPath: /config/epss
@@ -135,6 +143,11 @@ spec:
           configMap:
             name: {{ include "kevgate-admit.evidenceConfigMap" . }}
           {{- end }}
+        {{- if .Values.evidence.publicKey.existingConfigMap }}
+        - name: evidence-key
+          configMap:
+            name: {{ .Values.evidence.publicKey.existingConfigMap }}
+        {{- end }}
         {{- if .Values.epss.enabled }}
         - name: epss
           configMap:

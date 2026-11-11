@@ -261,6 +261,13 @@ func (e *evaluator) sourceFailure(name string, err error) {
 }
 
 func (e *evaluator) findings(ref imageref.Ref, name string, ev *evidence.Evidence) {
+	// An unauthenticated report is never scored. It counts as missing, so
+	// requireEvidence decides (deny by default), and an exception for
+	// requireEvidence on this image still applies.
+	if e.rule.RequireSignedEvidence && ev.Signature != evidence.SigVerified {
+		e.missing(ref, name, unsignedDetail(ev))
+		return
+	}
 	if e.rule.MaxEvidenceAge > 0 && !ev.ScannedAt.IsZero() {
 		if age := e.env.Now.Sub(ev.ScannedAt); age > e.rule.MaxEvidenceAge {
 			e.missing(ref, name, fmt.Sprintf("scan report is stale (%s old, limit %s)", roundAge(age), e.rule.MaxEvidenceAge))
@@ -269,12 +276,6 @@ func (e *evaluator) findings(ref imageref.Ref, name string, ev *evidence.Evidenc
 	}
 	scored := make([]Scored, 0, len(ev.Findings))
 	for _, f := range ev.Findings {
-		if e.rule.IgnoreUnfixed && f.Fixed == "" {
-			continue
-		}
-		if e.waived(func(x *Exception) bool { return x.CVE == f.ID && scopeMatches(x, ref) }) {
-			continue
-		}
 		epss := f.EPSS
 		if !f.HasEPSS && e.env.EPSS != nil {
 			if v, ok := e.env.EPSS.Lookup(f.ID); ok {
@@ -282,6 +283,15 @@ func (e *evaluator) findings(ref imageref.Ref, name string, ev *evidence.Evidenc
 			}
 		}
 		kev := f.KEVHint || (e.env.KEV != nil && e.env.KEV.Contains(f.ID))
+		// ignoreUnfixed never applies to a KEV finding: a vulnerability exploited in
+		// the wild is the last one to ignore for lack of a fix. Only an
+		// explicit, expiring CVE exception can waive it.
+		if e.rule.IgnoreUnfixed && f.Fixed == "" && !kev {
+			continue
+		}
+		if e.waived(func(x *Exception) bool { return x.CVE == f.ID && scopeMatches(x, ref) }) {
+			continue
+		}
 		r, err := risk.Score(f.CVSS, epss, e.rule.AssetCriticality, kev)
 		if err != nil {
 			// Evidence providers validate ranges, so this is a defect in the
@@ -316,6 +326,17 @@ func (e *evaluator) findings(ref imageref.Ref, name string, ev *evidence.Evidenc
 				fmt.Sprintf("%d finding(s) above max risk %.1f (highest %.1f)", len(over), *e.rule.MaxRisk, over[0].Risk), over)
 		}
 	}
+}
+
+// unsignedDetail explains why a report is not trusted, without echoing paths.
+func unsignedDetail(ev *evidence.Evidence) string {
+	switch ev.Signature {
+	case evidence.SigMissing:
+		return "scan report is unsigned (" + clip(ev.SigDetail, 120) + "); signed evidence is required"
+	case evidence.SigInvalid:
+		return "scan report signature is invalid (" + clip(ev.SigDetail, 120) + "); signed evidence is required"
+	}
+	return "scan report cannot be authenticated (no trusted evidence key configured, or the evidence source does not support signatures); signed evidence is required"
 }
 
 func sortScored(s []Scored) {
