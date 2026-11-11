@@ -1,0 +1,58 @@
+name: e2e-kind
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: kevgate-admit:demo
+          build-args: VERSION=ci-${{ github.sha }}
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - name: create the kind cluster
+        uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with:
+          cluster_name: kevgate-demo
+      - name: load the image into kind
+        run: kind load docker-image kevgate-admit:demo --name kevgate-demo
+      - name: run the demo and assert allow, deny and warn outcomes
+        # demo.sh exits non-zero when any outcome or denial text differs from
+        # what is expected. The chart uses tls.mode=helm (generated CA).
+        run: deploy/demo/demo.sh --use-current-context --out "$RUNNER_TEMP/demo-out" 2>&1 | tee "$RUNNER_TEMP/demo-transcript.txt"
+        shell: bash
+      - name: collect diagnostics
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/demo-out"
+          kubectl -n kevgate-system get all,configmap,networkpolicy -o wide > "$RUNNER_TEMP/demo-out/resources.txt" 2>&1 || true
+          kubectl -n kevgate-system describe pods > "$RUNNER_TEMP/demo-out/describe.txt" 2>&1 || true
+          kubectl -n kevgate-system logs deploy/kevgate-admit > "$RUNNER_TEMP/demo-out/webhook.log" 2>&1 || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: e2e-demo-output
+          path: |
+            ${{ runner.temp }}/demo-out
+            ${{ runner.temp }}/demo-transcript.txt
