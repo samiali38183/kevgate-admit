@@ -70,8 +70,10 @@ step "waiting for the webhook endpoint to accept connections"
 # a few seconds, and failurePolicy is Fail, so poll with the tag-only workload
 # (always denied, so nothing is ever created) until the webhook itself answers.
 reachable=0
+probe=""
 for _ in $(seq 1 60); do
-  if kubectl -n demo-enforce apply -f "$here/workloads/tag-only.yaml" 2>&1 | grep -q "denied the request"; then
+  probe="$(kubectl -n demo-enforce apply -f "$here/workloads/tag-only.yaml" 2>&1 || true)"
+  if grep -q "denied the request" <<<"$probe"; then
     reachable=1
     break
   fi
