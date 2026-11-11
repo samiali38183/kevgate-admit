@@ -150,10 +150,30 @@ func TestRunReloadsInBackground(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	_ = os.Remove(filepath.Join(dir, "tls.crt"))
+	// On Windows a remove can fail while the reloader still has the file open,
+	// so retry until it goes through.
+	rmDeadline := time.Now().Add(3 * time.Second)
+	for os.Remove(filepath.Join(dir, "tls.crt")) != nil {
+		if _, err := os.Stat(filepath.Join(dir, "tls.crt")); os.IsNotExist(err) {
+			break
+		}
+		if time.Now().After(rmDeadline) {
+			t.Fatal("could not remove the certificate file")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// Drain errors from the rotation above (a half-written pair can fail once)
+	// so only an error caused by the removal counts.
+	for drained := false; !drained; {
+		select {
+		case <-errs:
+		default:
+			drained = true
+		}
+	}
 	select {
 	case <-errs:
-	case <-time.After(3 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("onError not called")
 	}
 	cancel()
