@@ -82,12 +82,29 @@ type Rule struct {
 	AssetCriticality  int
 	MaxEvidenceAge    time.Duration // zero disables the staleness check
 	IgnoreUnfixed     bool
-	Exceptions        []Exception
+	// RequireSignedEvidence ignores any scan report whose detached signature was
+	// not verified against a trusted key; it is then handled like a missing report.
+	RequireSignedEvidence bool
+	Exceptions            []Exception
 }
 
 // NeedsEvidence reports whether any check of the rule uses scan evidence.
 func (r *Rule) NeedsEvidence() bool {
 	return r.MaxRisk != nil || r.DenyKEV || r.RequireEvidence != ActionAllow
+}
+
+// RequiresSignedEvidence reports whether any rule of the policy needs verified
+// report signatures.
+func (p *Policy) RequiresSignedEvidence() bool {
+	if p.Default.RequireSignedEvidence {
+		return true
+	}
+	for _, r := range p.Namespaces {
+		if r.RequireSignedEvidence {
+			return true
+		}
+	}
+	return false
 }
 
 // Policy is a validated policy document.
@@ -122,16 +139,17 @@ type rawPolicy struct {
 }
 
 type rawRule struct {
-	Mode              string         `json:"mode"`
-	MaxRisk           *float64       `json:"maxRisk"`
-	DenyKEV           bool           `json:"denyKev"`
-	RequireDigest     bool           `json:"requireDigest"`
-	RequireEvidence   string         `json:"requireEvidence"`
-	AllowedRegistries []string       `json:"allowedRegistries"`
-	AssetCriticality  int            `json:"assetCriticality"`
-	MaxEvidenceAge    string         `json:"maxEvidenceAge"`
-	IgnoreUnfixed     bool           `json:"ignoreUnfixed"`
-	Exceptions        []rawException `json:"exceptions"`
+	Mode                  string         `json:"mode"`
+	MaxRisk               *float64       `json:"maxRisk"`
+	DenyKEV               bool           `json:"denyKev"`
+	RequireDigest         bool           `json:"requireDigest"`
+	RequireEvidence       string         `json:"requireEvidence"`
+	AllowedRegistries     []string       `json:"allowedRegistries"`
+	AssetCriticality      int            `json:"assetCriticality"`
+	MaxEvidenceAge        string         `json:"maxEvidenceAge"`
+	IgnoreUnfixed         bool           `json:"ignoreUnfixed"`
+	RequireSignedEvidence bool           `json:"requireSignedEvidence"`
+	Exceptions            []rawException `json:"exceptions"`
 }
 
 type rawException struct {
@@ -202,11 +220,12 @@ func parseMode(s string, allowEmpty bool) (Mode, error) {
 
 func compileRule(where string, in rawRule) (Rule, error) {
 	r := Rule{
-		DenyKEV:          in.DenyKEV,
-		RequireDigest:    in.RequireDigest,
-		AssetCriticality: in.AssetCriticality,
-		IgnoreUnfixed:    in.IgnoreUnfixed,
-		MaxRisk:          in.MaxRisk,
+		DenyKEV:               in.DenyKEV,
+		RequireDigest:         in.RequireDigest,
+		AssetCriticality:      in.AssetCriticality,
+		IgnoreUnfixed:         in.IgnoreUnfixed,
+		RequireSignedEvidence: in.RequireSignedEvidence,
+		MaxRisk:               in.MaxRisk,
 	}
 	var err error
 	if r.Mode, err = parseMode(in.Mode, true); err != nil {

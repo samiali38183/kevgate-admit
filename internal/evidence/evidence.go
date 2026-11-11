@@ -4,15 +4,18 @@
 package evidence
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/samiali38183/kevgate-admit/internal/evsign"
 	"github.com/samiali38183/kevgate-admit/internal/trivy"
 	"github.com/samiali38183/kevgate-admit/internal/vuln"
 )
@@ -21,12 +24,32 @@ import (
 // failure of the provider.
 var ErrNotFound = errors.New("no evidence for digest")
 
+// SigState is the outcome of checking the detached signature of a report.
+type SigState string
+
+// Signature states.
+const (
+	// SigNotChecked: the provider has no signature support or no trusted key.
+	SigNotChecked SigState = ""
+	// SigVerified: a trusted key verified the signature over this report and digest.
+	SigVerified SigState = "verified"
+	// SigMissing: a trusted key is configured but the report has no .sig file.
+	SigMissing SigState = "missing"
+	// SigInvalid: the .sig file does not verify, or could not be read.
+	SigInvalid SigState = "invalid"
+)
+
 // Evidence is the scan result for one image digest.
 type Evidence struct {
 	Digest    string
 	Source    string
 	ScannedAt time.Time // zero when the source does not say
 	Findings  []vuln.Finding
+
+	// Signature says whether the report was authenticated. Policies that set
+	// requireSignedEvidence ignore a report unless it is SigVerified.
+	Signature SigState
+	SigDetail string // short reason for missing or invalid, safe to show in a message
 }
 
 // Provider looks up evidence by image digest (for example sha256:...).
@@ -57,6 +80,10 @@ func FileName(digest string) (string, error) {
 type DirProvider struct {
 	Dir      string
 	MaxBytes int64 // per report; default trivy.DefaultMaxBytes
+	// Verifier, when set, checks <report>.sig for every report and records the
+	// result in Evidence.Signature. It never rejects a report by itself: the
+	// policy decides with requireSignedEvidence.
+	Verifier *evsign.Verifier
 }
 
 // Name implements Provider.
@@ -91,7 +118,13 @@ func (p *DirProvider) Lookup(ctx context.Context, digest string) (*Evidence, err
 	if limit <= 0 {
 		limit = trivy.DefaultMaxBytes
 	}
-	rep, err := trivy.ParseReader(f, limit)
+	// Read once and use the same bytes for the signature check and the parse, so
+	// what was verified is what is judged.
+	data, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("evidence: read report: %w", err)
+	}
+	rep, err := trivy.ParseReader(bytes.NewReader(data), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +146,35 @@ func (p *DirProvider) Lookup(ctx context.Context, digest string) (*Evidence, err
 	if at.IsZero() {
 		at = fi.ModTime().UTC()
 	}
-	return &Evidence{Digest: digest, Source: "trivy-dir", ScannedAt: at, Findings: rep.Findings}, nil
+	ev := &Evidence{Digest: digest, Source: "trivy-dir", ScannedAt: at, Findings: rep.Findings}
+	if p.Verifier != nil {
+		ev.Signature, ev.SigDetail = p.checkSignature(path, digest, data)
+	}
+	return ev, nil
+}
+
+// checkSignature verifies path+".sig" over the report bytes read from path.
+func (p *DirProvider) checkSignature(path, digest string, report []byte) (SigState, string) {
+	sigPath := path + evsign.Suffix
+	f, err := os.Open(sigPath) // #nosec G304 -- derived from a validated digest, no traversal possible
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return SigMissing, "no signature file " + filepath.Base(sigPath)
+		}
+		return SigInvalid, "signature file unreadable"
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return SigInvalid, "signature file is not a regular file"
+	}
+	sig, err := io.ReadAll(io.LimitReader(f, evsign.MaxSignatureFileBytes+1))
+	if err != nil {
+		return SigInvalid, "signature file unreadable"
+	}
+	if err := p.Verifier.Verify(digest, report, sig); err != nil {
+		return SigInvalid, "signature does not verify against a trusted key"
+	}
+	return SigVerified, ""
 }
 
 // Chain tries providers in order. The first one that has evidence wins; if

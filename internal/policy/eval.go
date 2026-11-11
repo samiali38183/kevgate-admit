@@ -261,6 +261,13 @@ func (e *evaluator) sourceFailure(name string, err error) {
 }
 
 func (e *evaluator) findings(ref imageref.Ref, name string, ev *evidence.Evidence) {
+	// An unauthenticated report is never scored. It counts as missing, so
+	// requireEvidence decides (deny by default), and an exception for
+	// requireEvidence on this image still applies.
+	if e.rule.RequireSignedEvidence && ev.Signature != evidence.SigVerified {
+		e.missing(ref, name, unsignedDetail(ev))
+		return
+	}
 	if e.rule.MaxEvidenceAge > 0 && !ev.ScannedAt.IsZero() {
 		if age := e.env.Now.Sub(ev.ScannedAt); age > e.rule.MaxEvidenceAge {
 			e.missing(ref, name, fmt.Sprintf("scan report is stale (%s old, limit %s)", roundAge(age), e.rule.MaxEvidenceAge))
@@ -319,6 +326,17 @@ func (e *evaluator) findings(ref imageref.Ref, name string, ev *evidence.Evidenc
 				fmt.Sprintf("%d finding(s) above max risk %.1f (highest %.1f)", len(over), *e.rule.MaxRisk, over[0].Risk), over)
 		}
 	}
+}
+
+// unsignedDetail explains why a report is not trusted, without echoing paths.
+func unsignedDetail(ev *evidence.Evidence) string {
+	switch ev.Signature {
+	case evidence.SigMissing:
+		return "scan report is unsigned (" + clip(ev.SigDetail, 120) + "); signed evidence is required"
+	case evidence.SigInvalid:
+		return "scan report signature is invalid (" + clip(ev.SigDetail, 120) + "); signed evidence is required"
+	}
+	return "scan report cannot be authenticated (no trusted evidence key configured, or the evidence source does not support signatures); signed evidence is required"
 }
 
 func sortScored(s []Scored) {

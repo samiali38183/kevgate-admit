@@ -14,3 +14,5 @@ serviceMonitor:
   enabled: true
 evidence:
   existingClaim: scan-reports
+  publicKey:
+    existingConfigMap: report-signing-key
