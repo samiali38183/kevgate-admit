@@ -269,12 +269,6 @@ func (e *evaluator) findings(ref imageref.Ref, name string, ev *evidence.Evidenc
 	}
 	scored := make([]Scored, 0, len(ev.Findings))
 	for _, f := range ev.Findings {
-		if e.rule.IgnoreUnfixed && f.Fixed == "" {
-			continue
-		}
-		if e.waived(func(x *Exception) bool { return x.CVE == f.ID && scopeMatches(x, ref) }) {
-			continue
-		}
 		epss := f.EPSS
 		if !f.HasEPSS && e.env.EPSS != nil {
 			if v, ok := e.env.EPSS.Lookup(f.ID); ok {
@@ -282,6 +276,15 @@ func (e *evaluator) findings(ref imageref.Ref, name string, ev *evidence.Evidenc
 			}
 		}
 		kev := f.KEVHint || (e.env.KEV != nil && e.env.KEV.Contains(f.ID))
+		// ignoreUnfixed never applies to a KEV finding: a vulnerability exploited in
+		// the wild is the last one to ignore for lack of a fix. Only an
+		// explicit, expiring CVE exception can waive it.
+		if e.rule.IgnoreUnfixed && f.Fixed == "" && !kev {
+			continue
+		}
+		if e.waived(func(x *Exception) bool { return x.CVE == f.ID && scopeMatches(x, ref) }) {
+			continue
+		}
 		r, err := risk.Score(f.CVSS, epss, e.rule.AssetCriticality, kev)
 		if err != nil {
 			// Evidence providers validate ranges, so this is a defect in the

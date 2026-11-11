@@ -115,6 +115,9 @@ func TestParseInvalid(t *testing.T) {
 		{"registry scheme", "version: 1\ndefault:\n  allowedRegistries: [\"https://ghcr.io\"]\n", "allowedRegistries"},
 		{"registry wildcard", "version: 1\ndefault:\n  allowedRegistries: [\"*.io\"]\n", "allowedRegistries"},
 		{"empty registry", "version: 1\ndefault:\n  allowedRegistries: [\"\"]\n", "allowedRegistries"},
+		{"registry traversal", "version: 1\ndefault:\n  allowedRegistries: [\"ghcr.io/org/..\"]\n", "allowedRegistries"},
+		{"registry bad host", "version: 1\ndefault:\n  allowedRegistries: [\"::0\"]\n", "allowedRegistries"},
+		{"registry empty component", "version: 1\ndefault:\n  allowedRegistries: [\"ghcr.io//org\"]\n", "allowedRegistries"},
 		{"bad ns key", "version: 1\ndefault: {}\nnamespaces:\n  \"a*\": {}\n", "namespace key"},
 		{"not yaml", "version: [", "policy:"},
 		{"exc no id", ex("justification: long enough text\n      cve: CVE-2024-0001\n      expires: 2027-01-01"), "id is required"},
@@ -343,14 +346,60 @@ func TestEvaluateRules(t *testing.T) {
 			outcome: OutcomeAllow,
 		},
 		{
-			name:   "ignoreUnfixed skips findings without a fix",
+			name:   "ignoreUnfixed never drops a KEV finding without a fix",
 			policy: base + "  denyKev: true\n  ignoreUnfixed: true\n",
 			image: func(t *testing.T) ImageInput {
 				f := fnd("CVE-2021-44228", 10)
 				f.Fixed = ""
 				return img(t, pinned, evd(now, f), nil)
 			},
+			outcome:  OutcomeDeny,
+			rule:     RuleDenyKEV,
+			contains: []string{"CVE-2021-44228", "(no fix)"},
+		},
+		{
+			name:   "ignoreUnfixed drops a non KEV finding without a fix",
+			policy: base + "  denyKev: true\n  maxRisk: 20\n  ignoreUnfixed: true\n",
+			image: func(t *testing.T) ImageInput {
+				f := fnd("CVE-2024-0001", 10)
+				f.Fixed = ""
+				return img(t, pinned, evd(now, f), nil)
+			},
 			outcome: OutcomeAllow,
+		},
+		{
+			name:   "without ignoreUnfixed a non KEV finding without a fix counts for maxRisk",
+			policy: base + "  maxRisk: 20\n",
+			image: func(t *testing.T) ImageInput {
+				f := fnd("CVE-2024-0001", 10)
+				f.Fixed = ""
+				return img(t, pinned, evd(now, f), nil)
+			},
+			outcome: OutcomeDeny,
+			rule:    RuleMaxRisk,
+		},
+		{
+			name:   "ignoreUnfixed keeps a KEV finding without a fix for maxRisk too",
+			policy: base + "  maxRisk: 20\n  ignoreUnfixed: true\n",
+			image: func(t *testing.T) ImageInput {
+				f := fnd("CVE-2021-44228", 3)
+				f.Fixed = ""
+				return img(t, pinned, evd(now, f), nil)
+			},
+			outcome: OutcomeDeny,
+			rule:    RuleMaxRisk,
+		},
+		{
+			name:   "ignoreUnfixed keeps a finding the report itself marks as KEV",
+			policy: base + "  denyKev: true\n  ignoreUnfixed: true\n",
+			image: func(t *testing.T) ImageInput {
+				f := fnd("CVE-2024-0002", 5)
+				f.Fixed = ""
+				f.KEVHint = true
+				return img(t, pinned, evd(now, f), nil)
+			},
+			outcome: OutcomeDeny,
+			rule:    RuleDenyKEV,
 		},
 		{
 			name:     "malformed reference",
