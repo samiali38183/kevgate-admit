@@ -1,0 +1,25 @@
+{
+  "SchemaVersion": 2,
+  "CreatedAt": "2026-11-09T08:00:00Z",
+  "ArtifactName": "registry.example.com/demo/app",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "ImageID": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "RepoDigests": ["registry.example.com/demo/app@sha256:2222222222222222222222222222222222222222222222222222222222222222"]
+  },
+  "Results": [
+    {
+      "Target": "app (debian 12)",
+      "Vulnerabilities": [
+        {"VulnerabilityID": "CVE-2024-0001", "PkgName": "libfoo", "InstalledVersion": "1.0", "FixedVersion": "1.1", "Severity": "HIGH",
+         "CVSS": {"nvd": {"V2Score": 7.5, "V3Score": 8.1}, "redhat": {"V3Score": 7.2}}},
+        {"VulnerabilityID": "cve-2024-0002", "PkgName": "libbar", "InstalledVersion": "2.0", "Severity": "MEDIUM",
+         "CVSS": {"nvd": {"V2Score": 5.0}}, "EPSS": 0.42},
+        {"VulnerabilityID": "CVE-2024-0003", "PkgName": "libbaz", "InstalledVersion": "3.0", "Severity": "CRITICAL"},
+        {"VulnerabilityID": "CVE-2024-0001", "PkgName": "libfoo-dev", "InstalledVersion": "1.0", "Severity": "HIGH", "CVSS": {"nvd": {"V3Score": 9.0}}},
+        {"VulnerabilityID": "bad id with spaces", "PkgName": "x", "Severity": "LOW"}
+      ]
+    },
+    {"Target": "empty", "Vulnerabilities": null}
+  ]
+}

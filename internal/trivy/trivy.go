@@ -100,10 +100,11 @@ func ParseReader(r io.Reader, maxBytes int64) (*Report, error) {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	var extra json.RawMessage
-	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
-		if lr.N <= 0 {
-			return nil, fmt.Errorf("%w: larger than %d bytes", ErrInvalid, maxBytes)
-		}
+	err := dec.Decode(&extra)
+	if lr.N <= 0 {
+		return nil, fmt.Errorf("%w: larger than %d bytes", ErrInvalid, maxBytes)
+	}
+	if !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%w: trailing data after report", ErrInvalid)
 	}
 	if raw.SchemaVersion != 2 {
