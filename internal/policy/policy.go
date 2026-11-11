@@ -240,7 +240,11 @@ func compileRule(where string, in rawRule) (Rule, error) {
 		if reg == "" || strings.Contains(reg, "://") || strings.ContainsAny(reg, " *@") || strings.HasPrefix(reg, "/") {
 			return r, fmt.Errorf("policy: %s.allowedRegistries: invalid entry %q (use host or host/path, no scheme)", where, reg)
 		}
-		r.AllowedRegistries = append(r.AllowedRegistries, strings.ToLower(strings.TrimSuffix(reg, "/")))
+		norm, err := imageref.NormalizePrefix(reg)
+		if err != nil {
+			return r, fmt.Errorf("policy: %s.allowedRegistries: invalid entry %q (use a valid host or host/path, lower case path, no scheme)", where, reg)
+		}
+		r.AllowedRegistries = append(r.AllowedRegistries, norm)
 	}
 	if len(in.Exceptions) > maxExceptions {
 		return r, fmt.Errorf("policy: %s has more than %d exceptions", where, maxExceptions)
