@@ -86,8 +86,8 @@ jobs:
           helm template kevgate-admit deploy/helm/kevgate-admit -n kevgate-system | "$(go env GOPATH)/bin/kubeconform" -strict -summary -
           helm template kevgate-admit deploy/helm/kevgate-admit -n kevgate-system -f deploy/helm/kevgate-admit/ci/lint-values.yaml \
             | "$(go env GOPATH)/bin/kubeconform" -strict -summary -schema-location default -schema-location "$crds" -
-      - name: shellcheck demo script
-        run: shellcheck deploy/demo/demo.sh
+      - name: shellcheck demo scripts
+        run: shellcheck deploy/demo/demo.sh deploy/demo/outage.sh
       - name: actionlint
         run: |
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
