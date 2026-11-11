@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -542,7 +541,6 @@ func TestDefaultsApplied(t *testing.T) {
 	if h.MaxBody != DefaultMaxBody || h.Concurrency != DefaultConcurrency || h.LookupTimeout != DefaultLookupTimeout {
 		t.Errorf("defaults not applied: %+v", h)
 	}
-	_ = io.Discard
 }
 
 func FuzzDecodeAndExtract(f *testing.F) {

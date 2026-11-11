@@ -302,8 +302,6 @@ func TestServeStartupErrors(t *testing.T) {
 func TestServeWithCertFilesEPSSAndHTTPProvider(t *testing.T) {
 	dir := t.TempDir()
 	// Reuse the self-signed generator to produce mounted-secret style files.
-	var logs bytes.Buffer
-	_ = logs
 	epssFile := filepath.Join(dir, "epss.csv")
 	_ = os.WriteFile(epssFile, []byte("cve,epss,percentile\nCVE-2099-10004,0.9,0.99\n"), 0o600)
 	tokFile := filepath.Join(dir, "tok")
