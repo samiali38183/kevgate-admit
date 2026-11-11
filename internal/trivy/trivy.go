@@ -97,7 +97,7 @@ func ParseReader(r io.Reader, maxBytes int64) (*Report, error) {
 		if lr.N <= 0 {
 			return nil, fmt.Errorf("%w: larger than %d bytes", ErrInvalid, maxBytes)
 		}
-		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 	var extra json.RawMessage
 	err := dec.Decode(&extra)
@@ -114,7 +114,7 @@ func ParseReader(r io.Reader, maxBytes int64) (*Report, error) {
 	if raw.CreatedAt != "" {
 		t, err := time.Parse(time.RFC3339Nano, raw.CreatedAt)
 		if err != nil {
-			return nil, fmt.Errorf("%w: CreatedAt: %v", ErrInvalid, err)
+			return nil, fmt.Errorf("%w: CreatedAt: %w", ErrInvalid, err)
 		}
 		rep.CreatedAt = t.UTC()
 	}

@@ -1,0 +1,28 @@
+version: "2"
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - gosec
+    - bodyclose
+    - noctx
+    - misspell
+    - unconvert
+    - revive
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*os.File).Close
+        - (io.Closer).Close
+        - (net/http.ResponseWriter).Write
+        - os.Remove
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, noctx, revive, errcheck, bodyclose]
+formatters:
+  enable:
+    - gofmt

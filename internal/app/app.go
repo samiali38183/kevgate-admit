@@ -228,7 +228,7 @@ func Serve(ctx context.Context, cfg Config, log *slog.Logger, ready chan<- Addrs
 		}
 		certs = tlsutil.Static(cert)
 		if cfg.SelfSignedCA != "" {
-			if err := os.WriteFile(cfg.SelfSignedCA, caPEM, 0o644); err != nil {
+			if err := os.WriteFile(cfg.SelfSignedCA, caPEM, 0o644); err != nil { //nolint:gosec // public certificate
 				return fmt.Errorf("write CA: %w", err)
 			}
 		}

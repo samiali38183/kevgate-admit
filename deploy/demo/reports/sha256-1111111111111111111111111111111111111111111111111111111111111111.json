@@ -1,0 +1,45 @@
+{
+  "SchemaVersion": 2,
+  "Synthetic": "SYNTHETIC FIXTURE for the kevgate-admit demo. Not the output of a real scan. Package names, versions and scores are invented; the KEV CVE ID is only reused so the demo catalog has something to match.",
+  "CreatedAt": "2026-11-01T00:00:00Z",
+  "ArtifactName": "registry.example.com/demo/clean",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "RepoDigests": [
+      "registry.example.com/demo/clean@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    ]
+  },
+  "Results": [
+    {
+      "Target": "clean (synthetic)",
+      "Class": "os-pkgs",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2099-10001",
+          "PkgName": "libexample",
+          "InstalledVersion": "1.0",
+          "FixedVersion": "1.1",
+          "Severity": "LOW",
+          "CVSS": {
+            "nvd": {
+              "V3Score": 3.1
+            }
+          }
+        },
+        {
+          "VulnerabilityID": "CVE-2099-10002",
+          "PkgName": "libsample",
+          "InstalledVersion": "2.4",
+          "FixedVersion": "2.5",
+          "Severity": "MEDIUM",
+          "CVSS": {
+            "nvd": {
+              "V3Score": 5.3
+            }
+          },
+          "EPSS": 0.01
+        }
+      ]
+    }
+  ]
+}

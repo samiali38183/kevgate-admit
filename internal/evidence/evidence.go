@@ -72,7 +72,7 @@ func (p *DirProvider) Lookup(ctx context.Context, digest string) (*Evidence, err
 		return nil, err
 	}
 	path := filepath.Join(p.Dir, name)
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // name derives from a validated digest, no traversal possible
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNotFound
@@ -87,11 +87,11 @@ func (p *DirProvider) Lookup(ctx context.Context, digest string) (*Evidence, err
 	if !fi.Mode().IsRegular() {
 		return nil, errors.New("evidence: report is not a regular file")
 	}
-	max := p.MaxBytes
-	if max <= 0 {
-		max = trivy.DefaultMaxBytes
+	limit := p.MaxBytes
+	if limit <= 0 {
+		limit = trivy.DefaultMaxBytes
 	}
-	rep, err := trivy.ParseReader(f, max)
+	rep, err := trivy.ParseReader(f, limit)
 	if err != nil {
 		return nil, err
 	}

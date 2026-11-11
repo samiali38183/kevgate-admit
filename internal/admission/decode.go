@@ -32,7 +32,7 @@ func DecodeReview(body []byte) (*admissionv1.AdmissionReview, error) {
 	dec.DisallowUnknownFields()
 	var rev admissionv1.AdmissionReview
 	if err := dec.Decode(&rev); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrBadRequest, err)
+		return nil, fmt.Errorf("%w: %w", ErrBadRequest, err)
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%w: trailing data", ErrBadRequest)
@@ -128,7 +128,7 @@ func podSpecOf(group, kind string, raw []byte) (*corev1.PodSpec, string, error) 
 	default:
 		return nil, "", fmt.Errorf("%w: %s/%s", ErrUnsupported, group, kind)
 	}
-	return nil, "", fmt.Errorf("%w: decoding %s: %v", ErrBadRequest, kind, err)
+	return nil, "", fmt.Errorf("%w: decoding %s: %w", ErrBadRequest, kind, err)
 }
 
 func imagesOf(spec *corev1.PodSpec) []string {

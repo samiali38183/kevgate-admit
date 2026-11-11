@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"SchemaVersion\":2,\"Results\":[{\"Vulnerabilities\":[{\"VulnerabilityID\":\"CVE-2024-0001\",\"EPSS\":7}]}]}")

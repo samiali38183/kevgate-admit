@@ -1,0 +1,46 @@
+{
+  "SchemaVersion": 2,
+  "Synthetic": "SYNTHETIC FIXTURE for the kevgate-admit demo. Not the output of a real scan. Package names, versions and scores are invented; the KEV CVE ID is only reused so the demo catalog has something to match.",
+  "CreatedAt": "2026-11-01T00:00:00Z",
+  "ArtifactName": "registry.example.com/demo/over-threshold",
+  "ArtifactType": "container_image",
+  "Metadata": {
+    "RepoDigests": [
+      "registry.example.com/demo/over-threshold@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    ]
+  },
+  "Results": [
+    {
+      "Target": "over-threshold (synthetic)",
+      "Class": "os-pkgs",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "CVE-2099-10004",
+          "PkgName": "libwidget",
+          "InstalledVersion": "3.2",
+          "FixedVersion": "3.3",
+          "Severity": "CRITICAL",
+          "CVSS": {
+            "nvd": {
+              "V3Score": 9.8
+            }
+          },
+          "EPSS": 0.9
+        },
+        {
+          "VulnerabilityID": "CVE-2099-10005",
+          "PkgName": "libgadget",
+          "InstalledVersion": "0.9",
+          "FixedVersion": "",
+          "Severity": "HIGH",
+          "CVSS": {
+            "nvd": {
+              "V3Score": 7.5
+            }
+          },
+          "EPSS": 0.2
+        }
+      ]
+    }
+  ]
+}

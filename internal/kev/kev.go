@@ -177,13 +177,13 @@ func writeAtomic(dest string, data []byte) error {
 	name := tmp.Name()
 	defer os.Remove(name)
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fmt.Errorf("kev: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("kev: %w", err)
 	}
-	if err := os.Chmod(name, 0o644); err != nil {
+	if err := os.Chmod(name, 0o644); err != nil { //nolint:gosec // public catalog, must be readable by the server user
 		return fmt.Errorf("kev: %w", err)
 	}
 	if err := os.Rename(name, dest); err != nil {
