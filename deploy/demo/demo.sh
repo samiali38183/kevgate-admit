@@ -67,11 +67,11 @@ helm upgrade --install kevgate-admit "$root/deploy/helm/kevgate-admit" \
 
 step "waiting for the webhook endpoint to accept connections"
 # helm --wait only proves the pod is Ready. The Service route can lag behind by
-# a few seconds, and failurePolicy is Fail, so poll with a server-side dry run
-# until the API server can reach the webhook (any answer except a call failure).
+# a few seconds, and failurePolicy is Fail, so poll with the tag-only workload
+# (always denied, so nothing is ever created) until the webhook itself answers.
 reachable=0
 for _ in $(seq 1 60); do
-  if ! kubectl -n demo-enforce apply --dry-run=server -f "$here/workloads/clean.yaml" 2>&1 | grep -q "failed calling webhook"; then
+  if kubectl -n demo-enforce apply -f "$here/workloads/tag-only.yaml" 2>&1 | grep -q "denied the request"; then
     reachable=1
     break
   fi
