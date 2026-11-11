@@ -72,7 +72,7 @@ func (p *DirProvider) Lookup(ctx context.Context, digest string) (*Evidence, err
 		return nil, err
 	}
 	path := filepath.Join(p.Dir, name)
-	f, err := os.Open(path) //nolint:gosec // name derives from a validated digest, no traversal possible
+	f, err := os.Open(path) // #nosec G304 -- name derives from a validated digest, no traversal possible
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, ErrNotFound

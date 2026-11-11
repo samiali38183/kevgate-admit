@@ -65,6 +65,25 @@ helm upgrade --install kevgate-admit "$root/deploy/helm/kevgate-admit" \
   --set image.repository="$repo" --set image.tag="$tag" \
   --wait --timeout 180s
 
+step "waiting for the webhook endpoint to accept connections"
+# helm --wait only proves the pod is Ready. The Service route can lag behind by
+# a few seconds, and failurePolicy is Fail, so poll with a server-side dry run
+# until the API server can reach the webhook (any answer except a call failure).
+reachable=0
+for _ in $(seq 1 60); do
+  if ! kubectl -n demo-enforce apply --dry-run=server -f "$here/workloads/clean.yaml" 2>&1 | grep -q "failed calling webhook"; then
+    reachable=1
+    break
+  fi
+  sleep 2
+done
+if [ "$reachable" -ne 1 ]; then
+  echo "webhook did not become reachable within 120s" >&2
+  kubectl -n kevgate-system get pods,svc,endpoints -o wide >&2 || true
+  kubectl -n kevgate-system logs deploy/kevgate-admit >&2 || true
+  exit 1
+fi
+
 # check NAME NAMESPACE MANIFEST EXPECT(allowed|denied|warned) PATTERN...
 # Applies the manifest, stores the output and verifies the outcome and that
 # every PATTERN appears in the output.

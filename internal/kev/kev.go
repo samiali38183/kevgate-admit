@@ -183,7 +183,7 @@ func writeAtomic(dest string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("kev: %w", err)
 	}
-	if err := os.Chmod(name, 0o644); err != nil { //nolint:gosec // public catalog, must be readable by the server user
+	if err := os.Chmod(name, 0o644); err != nil { // #nosec G302 -- public catalog, must be readable by the server user
 		return fmt.Errorf("kev: %w", err)
 	}
 	if err := os.Rename(name, dest); err != nil {
