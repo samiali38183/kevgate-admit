@@ -1,0 +1,7 @@
+.git
+.github
+deploy
+docs
+coverage.txt
+*.md
+bin

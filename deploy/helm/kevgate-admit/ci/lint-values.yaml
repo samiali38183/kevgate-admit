@@ -1,0 +1,16 @@
+# Exercises every optional template for helm lint and kubeconform.
+tls:
+  mode: certManager
+  certManager:
+    issuerRef:
+      name: ca-issuer
+epss:
+  enabled: true
+  existingConfigMap: epss-data
+kevgateUrl: http://kevgate.kevgate.svc:8000
+kevgateTokenSecret:
+  name: kevgate-token
+serviceMonitor:
+  enabled: true
+evidence:
+  existingClaim: scan-reports

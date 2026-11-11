@@ -1,0 +1,109 @@
+{{- $fullname := include "kevgate-admit.fullname" . -}}
+{{- $ns := .Release.Namespace -}}
+{{- $cn := printf "%s.%s.svc" $fullname $ns -}}
+{{- $caBundle := "" -}}
+{{- if eq .Values.tls.mode "helm" -}}
+{{- $secretName := include "kevgate-admit.tlsSecret" . -}}
+{{- $existing := lookup "v1" "Secret" $ns $secretName -}}
+{{- if and $existing $existing.data (index $existing.data "ca.crt") -}}
+{{- $caBundle = index $existing.data "ca.crt" -}}
+{{- else -}}
+{{- $ca := genCA (printf "%s-ca" $fullname) 3650 -}}
+{{- $cert := genSignedCert $cn nil (list $cn (printf "%s.%s" $fullname $ns) $fullname) 3650 $ca -}}
+{{- $caBundle = $ca.Cert | b64enc -}}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "kevgate-admit.labels" . | nindent 4 }}
+type: kubernetes.io/tls
+data:
+  tls.crt: {{ $cert.Cert | b64enc }}
+  tls.key: {{ $cert.Key | b64enc }}
+  ca.crt: {{ $ca.Cert | b64enc }}
+---
+{{ end -}}
+{{- else if eq .Values.tls.mode "certManager" -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "kevgate-admit.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "kevgate-admit.tlsSecret" . }}
+  duration: {{ .Values.tls.certManager.duration }}
+  renewBefore: {{ .Values.tls.certManager.renewBefore }}
+  dnsNames:
+    - {{ $fullname }}
+    - {{ $fullname }}.{{ $ns }}
+    - {{ $cn }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    name: {{ required "tls.certManager.issuerRef.name is required when tls.mode is certManager" .Values.tls.certManager.issuerRef.name }}
+    kind: {{ .Values.tls.certManager.issuerRef.kind }}
+    group: {{ .Values.tls.certManager.issuerRef.group }}
+---
+{{ else if eq .Values.tls.mode "existingSecret" -}}
+{{- $caBundle = required "tls.caBundle is required when tls.mode is existingSecret" .Values.tls.caBundle -}}
+{{- else -}}
+{{- fail "tls.mode must be helm, certManager or existingSecret" -}}
+{{- end -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "kevgate-admit.labels" . | nindent 4 }}
+  {{- if eq .Values.tls.mode "certManager" }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ $ns }}/{{ $fullname }}
+  {{- end }}
+webhooks:
+  - name: validate.kevgate-admit.samiali38183.github.io
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    matchPolicy: Equivalent
+    failurePolicy: {{ .Values.failurePolicy }}
+    timeoutSeconds: {{ .Values.timeoutSeconds }}
+    clientConfig:
+      service:
+        name: {{ $fullname }}
+        namespace: {{ $ns }}
+        path: /validate
+        port: {{ .Values.service.port }}
+      {{- if ne .Values.tls.mode "certManager" }}
+      caBundle: {{ $caBundle }}
+      {{- end }}
+    # Never judge the namespace the webhook runs in (it would deadlock its own
+    # startup) or the system namespaces.
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            {{- range (concat .Values.excludedNamespaces (list $ns) | uniq) }}
+            - {{ . }}
+            {{- end }}
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "pods/ephemeralcontainers"]
+        scope: Namespaced
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "statefulsets", "daemonsets"]
+        scope: Namespaced
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+        scope: Namespaced

@@ -1,0 +1,114 @@
+# Default values for kevgate-admit.
+
+image:
+  repository: ghcr.io/samiali38183/kevgate-admit
+  # Defaults to the chart appVersion. Prefer pinning a digest in production.
+  tag: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 2
+
+# What the API server does when the webhook cannot be reached or times out.
+# Fail  = requests are rejected while the webhook is down (safe, can block the cluster).
+# Ignore = requests are admitted while the webhook is down (available, bypassable).
+# See docs/DESIGN.md before changing this.
+failurePolicy: Fail
+timeoutSeconds: 10
+
+# What the webhook does when its evidence source fails or it hits an internal error.
+# closed = deny, open = allow with a warning.
+failMode: closed
+
+# Namespaces never sent to the webhook. The release namespace is always excluded.
+excludedNamespaces:
+  - kube-system
+  - kube-public
+  - kube-node-lease
+
+tls:
+  # helm            generate a CA and certificate at install time (kind, CI, demos)
+  # certManager     create a cert-manager Certificate from tls.certManager.issuerRef
+  # existingSecret  use tls.secretName (type kubernetes.io/tls) and tls.caBundle
+  mode: helm
+  secretName: ""
+  caBundle: ""   # base64 PEM CA, only for mode existingSecret
+  certManager:
+    issuerRef:
+      name: ""
+      kind: Issuer
+      group: cert-manager.io
+    duration: 2160h
+    renewBefore: 360h
+
+policy:
+  version: 1
+  mode: enforce
+  default:
+    requireDigest: true
+    requireEvidence: deny
+    denyKev: true
+    maxRisk: 70
+
+kev:
+  # ConfigMap holding known_exploited_vulnerabilities.json. Create it from the
+  # catalog downloaded with `kevgate-admit kev-refresh`. The full catalog is
+  # close to the 1 MiB ConfigMap limit over time; use a volume for large files.
+  existingConfigMap: kevgate-admit-kev
+  key: known_exploited_vulnerabilities.json
+
+evidence:
+  # ConfigMap holding sha256-<hex>.json Trivy reports. When empty, the chart
+  # creates an empty one that a scan job can fill.
+  existingConfigMap: ""
+  # Alternatively mount a PersistentVolumeClaim populated by a scan pipeline.
+  existingClaim: ""
+
+epss:
+  enabled: false
+  existingConfigMap: ""
+  key: epss.csv
+
+# Optional kevgate HTTP provider, tried when no report file exists.
+kevgateUrl: ""
+kevgateTokenSecret:
+  name: ""
+  key: token
+
+reloadInterval: 15s
+logLevel: info
+
+service:
+  port: 443
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+  # Namespace labels allowed to scrape the metrics port.
+  metricsFrom:
+    - matchLabels:
+        kubernetes.io/metadata.name: monitoring
+  # Egress rules (NetworkPolicyEgressRule list). Empty means no egress, which is
+  # all the webhook needs when evidence comes from mounted files.
+  egress: []
+
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  labels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}

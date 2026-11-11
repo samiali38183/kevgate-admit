@@ -1,0 +1,159 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kevgate-admit.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kevgate-admit.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kevgate-admit.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        {{- include "kevgate-admit.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "kevgate-admit.fullname" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "kevgate-admit.selectorLabels" . | nindent 14 }}
+      containers:
+        - name: webhook
+          image: {{ include "kevgate-admit.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - serve
+            - --listen=:8443
+            - --metrics-listen=:8080
+            - --tls-cert-file=/tls/tls.crt
+            - --tls-key-file=/tls/tls.key
+            - --policy-file=/config/policy/policy.yaml
+            - --kev-file=/config/kev/{{ .Values.kev.key }}
+            - --evidence-dir=/evidence
+            {{- if .Values.epss.enabled }}
+            - --epss-file=/config/epss/{{ .Values.epss.key }}
+            {{- end }}
+            {{- if .Values.kevgateUrl }}
+            - --evidence-url={{ .Values.kevgateUrl }}
+            {{- end }}
+            {{- if .Values.kevgateTokenSecret.name }}
+            - --evidence-token-file=/secrets/kevgate/{{ .Values.kevgateTokenSecret.key }}
+            {{- end }}
+            - --fail-mode={{ .Values.failMode }}
+            - --eval-timeout={{ max 1 (sub (int .Values.timeoutSeconds) 2) }}s
+            - --reload-interval={{ .Values.reloadInterval }}
+            - --log-level={{ .Values.logLevel }}
+          ports:
+            - name: https
+              containerPort: 8443
+            - name: metrics
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: metrics
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: metrics
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            - name: policy
+              mountPath: /config/policy
+              readOnly: true
+            - name: kev
+              mountPath: /config/kev
+              readOnly: true
+            - name: evidence
+              mountPath: /evidence
+              readOnly: true
+            {{- if .Values.epss.enabled }}
+            - name: epss
+              mountPath: /config/epss
+              readOnly: true
+            {{- end }}
+            {{- if .Values.kevgateTokenSecret.name }}
+            - name: kevgate-token
+              mountPath: /secrets/kevgate
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tls
+          secret:
+            secretName: {{ include "kevgate-admit.tlsSecret" . }}
+        - name: policy
+          configMap:
+            name: {{ include "kevgate-admit.fullname" . }}-policy
+        - name: kev
+          configMap:
+            name: {{ .Values.kev.existingConfigMap }}
+        - name: evidence
+          {{- if .Values.evidence.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.evidence.existingClaim }}
+            readOnly: true
+          {{- else }}
+          configMap:
+            name: {{ include "kevgate-admit.evidenceConfigMap" . }}
+          {{- end }}
+        {{- if .Values.epss.enabled }}
+        - name: epss
+          configMap:
+            name: {{ required "epss.existingConfigMap is required when epss.enabled" .Values.epss.existingConfigMap }}
+        {{- end }}
+        {{- if .Values.kevgateTokenSecret.name }}
+        - name: kevgate-token
+          secret:
+            secretName: {{ .Values.kevgateTokenSecret.name }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

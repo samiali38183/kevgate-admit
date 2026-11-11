@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kevgate-admit.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kevgate-admit.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "kevgate-admit.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: https
+      port: {{ .Values.service.port }}
+      targetPort: https
+    - name: metrics
+      port: 8080
+      targetPort: metrics
