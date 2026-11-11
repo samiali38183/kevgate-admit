@@ -1,5 +1,9 @@
 # kevgate-admit
 
+[![ci](https://github.com/samiali38183/kevgate-admit/actions/workflows/ci.yml/badge.svg)](https://github.com/samiali38183/kevgate-admit/actions/workflows/ci.yml)
+[![e2e-kind](https://github.com/samiali38183/kevgate-admit/actions/workflows/e2e-kind.yml/badge.svg)](https://github.com/samiali38183/kevgate-admit/actions/workflows/e2e-kind.yml)
+[![security](https://github.com/samiali38183/kevgate-admit/actions/workflows/security.yml/badge.svg)](https://github.com/samiali38183/kevgate-admit/actions/workflows/security.yml)
+
 A Kubernetes validating admission webhook, written in Go, that decides whether a workload may be created based on vulnerability evidence for the exact image digests it runs. Findings are scored with the same risk model as the sibling project [kevgate](https://github.com/samiali38183/kevgate): exploitation in the wild (CISA KEV) carries the largest weight, followed by asset criticality, EPSS and CVSS.
 
 The webhook does not scan images. It consumes reports that a scan pipeline already produced (Trivy JSON, one file per digest) and enforces a policy over them at admission time.
@@ -93,11 +97,71 @@ Measured on a Windows workstation with Go 1.27.4:
 - `actionlint` and `shellcheck` are clean.
 - The race detector needs cgo and a C compiler, which this workstation does not have, so `go test -race` has not been run locally. CI runs it.
 
-Not verified locally and waiting for CI: the Docker build, the kind end to end run, hadolint, the gosec and Trivy image jobs, the release workflow.
+Verified by CI on GitHub Actions (see the badges above): the Docker build, the kind end to end run, hadolint, gosec, govulncheck, the Trivy filesystem and image scans, gitleaks, and `go test -race`. The release workflow is a skeleton and has never run.
 
-## End to end transcript (to be filled from CI)
+## End to end transcript
 
-This section is intentionally empty. There is no container runtime on the development machine, so `deploy/demo/demo.sh` has not run against a cluster yet. After the first successful run of the `e2e-kind` workflow, paste the transcript from the `e2e-demo-output` artifact here (`demo-transcript.txt`), together with the decision counters from `metrics.txt`.
+`deploy/demo/demo.sh` runs in the `e2e-kind` workflow on a hosted runner: it builds the image, creates a kind cluster, loads the image, installs the chart with `tls.mode=helm` (a CA and serving certificate generated at install time) and the synthetic evidence from `deploy/demo/reports`, then applies the demo workloads and fails the job unless every outcome and denial text matches. The webhook log, pod descriptions, resource listing, metrics and this transcript are uploaded as the `e2e-demo-output` artifact. The cert-manager path is not exercised in CI; it is only covered by `helm template | kubeconform`.
+
+Below is the unedited output of that step from a passing run (timestamps trimmed). The "waiting" step sends one or more extra requests for the always-denied `tag-only` workload until the webhook answers, so they are also counted in the decision counters. The counters also include the Pods that the Deployments in `clean` and `over-threshold-audit` create.
+
+```text
+== namespaces and evidence
+namespace/kevgate-system created
+namespace/demo-enforce created
+namespace/demo-audit created
+configmap/demo-kev created
+configmap/demo-evidence created
+
+== installing the chart
+Release "kevgate-admit" does not exist. Installing it now.
+NAME: kevgate-admit
+LAST DEPLOYED: Wed Nov 11 04:17:00 2026
+NAMESPACE: kevgate-system
+STATUS: deployed
+REVISION: 1
+DESCRIPTION: Install complete
+TEST SUITE: None
+
+== waiting for the webhook endpoint to accept connections
+
+== clean in demo-enforce (expect: allowed)
+deployment.apps/clean created
+RESULT clean: PASS
+
+== kev-vulnerable in demo-enforce (expect: denied)
+Error from server (Forbidden): error when creating "/home/runner/work/kevgate-admit/kevgate-admit/deploy/demo/workloads/kev-vulnerable.yaml": admission webhook "validate.kevgate-admit.samiali38183.github.io" denied the request: kevgate-admit: request denied by policy (namespace "demo-enforce", scope "demo-enforce")
+- [denyKev] registry.example.com/demo/kev-vulnerable@sha256:222222222222: 1 finding(s) in the CISA KEV catalog
+    CVE-2021-44228   KEV  risk  87.5  log4j-core 2.14.1 (fixed 2.17.1)
+- [maxRisk] registry.example.com/demo/kev-vulnerable@sha256:222222222222: 1 finding(s) above max risk 40.0 (highest 87.5)
+    CVE-2021-44228   KEV  risk  87.5  log4j-core 2.14.1 (fixed 2.17.1)
+RESULT kev-vulnerable: PASS
+
+== over-threshold-enforce in demo-enforce (expect: denied)
+Error from server (Forbidden): error when creating "/home/runner/work/kevgate-admit/kevgate-admit/deploy/demo/workloads/over-threshold.yaml": admission webhook "validate.kevgate-admit.samiali38183.github.io" denied the request: kevgate-admit: request denied by policy (namespace "demo-enforce", scope "demo-enforce")
+- [maxRisk] registry.example.com/demo/over-threshold@sha256:333333333333: 1 finding(s) above max risk 40.0 (highest 47.7)
+    CVE-2099-10004        risk  47.7  libwidget 3.2 (fixed 3.3)
+RESULT over-threshold-enforce: PASS
+
+== over-threshold-audit in demo-audit (expect: warned)
+Warning: kevgate-admit audit: would deny [maxRisk] registry.example.com/demo/over-threshold@sha256:333333333333: 1 finding(s) above max risk 40.0 (highest 47.7)
+deployment.apps/over-threshold created
+RESULT over-threshold-audit: PASS
+
+== tag-only in demo-enforce (expect: denied)
+Error from server (Forbidden): error when creating "/home/runner/work/kevgate-admit/kevgate-admit/deploy/demo/workloads/tag-only.yaml": admission webhook "validate.kevgate-admit.samiali38183.github.io" denied the request: kevgate-admit: request denied by policy (namespace "demo-enforce", scope "demo-enforce")
+- [requireDigest] registry.example.com/demo/clean:latest: image is not pinned by digest; tags are mutable
+RESULT tag-only: PASS
+
+== collecting webhook logs and metrics
+kevgate_admit_decisions_total{namespace="demo-audit",outcome="audit_deny",rule="maxRisk"} 2
+kevgate_admit_decisions_total{namespace="demo-enforce",outcome="allow",rule="none"} 2
+kevgate_admit_decisions_total{namespace="demo-enforce",outcome="deny",rule="denyKev"} 1
+kevgate_admit_decisions_total{namespace="demo-enforce",outcome="deny",rule="maxRisk"} 1
+kevgate_admit_decisions_total{namespace="demo-enforce",outcome="deny",rule="requireDigest"} 2
+
+demo finished: all checks passed
+```
 
 ## Configuration
 

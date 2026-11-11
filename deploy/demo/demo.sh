@@ -65,6 +65,27 @@ helm upgrade --install kevgate-admit "$root/deploy/helm/kevgate-admit" \
   --set image.repository="$repo" --set image.tag="$tag" \
   --wait --timeout 180s
 
+step "waiting for the webhook endpoint to accept connections"
+# helm --wait only proves the pod is Ready. The Service route can lag behind by
+# a few seconds, and failurePolicy is Fail, so poll with the tag-only workload
+# (always denied, so nothing is ever created) until the webhook itself answers.
+reachable=0
+probe=""
+for _ in $(seq 1 60); do
+  probe="$(kubectl -n demo-enforce apply -f "$here/workloads/tag-only.yaml" 2>&1 || true)"
+  if grep -q "denied the request" <<<"$probe"; then
+    reachable=1
+    break
+  fi
+  sleep 2
+done
+if [ "$reachable" -ne 1 ]; then
+  echo "webhook did not become reachable within 120s" >&2
+  kubectl -n kevgate-system get pods,svc,endpoints -o wide >&2 || true
+  kubectl -n kevgate-system logs deploy/kevgate-admit >&2 || true
+  exit 1
+fi
+
 # check NAME NAMESPACE MANIFEST EXPECT(allowed|denied|warned) PATTERN...
 # Applies the manifest, stores the output and verifies the outcome and that
 # every PATTERN appears in the output.
