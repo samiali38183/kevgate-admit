@@ -14,6 +14,14 @@ A report store moves scanning to a pipeline that runs when an image is built or 
 
 A report is only accepted for a digest when its metadata does not name a different one. A file renamed to another image's digest is rejected as an evidence error rather than vouching for the wrong image.
 
+## Image references
+
+The image reference is the key for everything else (the allow-list, the digest used to find a report, exception scopes), so it is parsed strictly before any of that happens. An earlier version only split on `/`, `:` and `@`, and fuzzing showed that it accepted `::0`, invalid UTF-8 hosts, and `ghcr.io/org/../evil`, which then matched the allowed prefix `ghcr.io/org` textually. The runtime would probably have refused such an image, but an allow-list should not depend on that. `internal/imageref` now implements the OCI distribution name grammar and a validated registry host syntax, rejects anything else as `imageRef`, and validates `allowedRegistries` entries with the same rules when the policy loads. The grammar and the deliberate differences from `distribution/reference` are listed in the policy reference.
+
+## Evidence authenticity
+
+Digest keys say which bytes a report is about, not who wrote the report. The store is a directory or ConfigMap, so write access is the trust boundary. Signing is an opt-in layer: `requireSignedEvidence` plus `--evidence-public-key-file` makes the directory provider verify a detached `<digest>.json.sig` over the report bytes and the digest, and the policy treats an unverified report as missing evidence. Only the standard library is used (Ed25519 and ECDSA P-256), which keeps the dependency set unchanged. Cosign-style keyless signing, transparency logs and attestations were left out on purpose: they need network access or a bundle verifier at admission time, and the webhook's design rule is a fast local read. The cost of that choice is that trust is a long-lived key that the operator must protect and rotate.
+
 ## Scoring
 
 The model is the one in the kevgate service: weights 0.40 KEV, 0.25 asset criticality (acr/8), 0.20 EPSS, 0.20 CVSS (/10), divided by their sum 1.05, times 100, rounded to one decimal. The Go implementation reproduces the Python arithmetic order and the rounding rule. The test suite compares 1000 vectors produced by the Python function.
@@ -23,6 +31,7 @@ Inputs come from different places:
 - KEV membership: the local catalog file, or a hint from the HTTP provider.
 - CVSS: the highest v3 score across the sources in the report, else the highest v2 score, else a value implied by the severity label (critical 9.0, high 7.5, medium 5.0, low 2.0).
 - EPSS: the report if it carries an `EPSS` field, else the local CSV, else 0. A missing EPSS therefore lowers the score, which is the less safe direction. Keep the CSV loaded if `maxRisk` matters.
+- Unfixed findings: scored like any other unless `ignoreUnfixed` is set, which drops them except KEV findings (never dropped). `maxRisk` is per finding, not an aggregate.
 - Asset criticality: per namespace in the policy. The webhook does not know how important a workload is, only where it runs.
 
 ## Failure behaviour
@@ -32,6 +41,8 @@ There are two layers and they are configured separately.
 `failurePolicy` on the ValidatingWebhookConfiguration is the API server's decision when it cannot get an answer at all (webhook down, TLS failure, timeout). `Fail` rejects requests, which is the only setting that cannot be bypassed by taking the webhook down, but it makes the webhook a cluster dependency. It is the chart default. `Ignore` keeps the cluster available and turns an outage into a bypass window. Choose `Fail` with at least two replicas and a PodDisruptionBudget, or `Ignore` with alerting on webhook availability and an audit trail elsewhere. The webhook's own namespace and the system namespaces are excluded by `namespaceSelector` so that it can always start.
 
 `--fail-mode` is the webhook's own decision when it answered but could not do its job (evidence source error, unreadable object, panic). `closed` denies, `open` allows with a warning. A missing report is not a failure and is governed by `requireEvidence`.
+
+The e2e workflow tests the first layer: it scales the webhook to zero and checks that `Fail` rejects with "failed calling webhook", that `Ignore` admits, that `kube-system` and the webhook namespace are not gated, and that normal decisions resume after recovery. `--fail-mode` is covered by unit and server tests, not by the cluster run.
 
 ## Tradeoffs
 
@@ -49,5 +60,8 @@ There are two layers and they are configured separately.
 - Running workloads are not re-evaluated. A new KEV entry blocks new and changed images, not existing pods. Pair it with a periodic report or runtime control for that.
 - Exceptions are policy entries, not signed statements. Anyone who can change the policy ConfigMap can add one. Review the policy through the same process as code, and watch the `exceptions_total` metric and the logs.
 - The kevgate HTTP provider cannot tell an unknown asset from a clean one (an empty list means "no evidence"), and has no scan timestamp.
-- No support for ReplicaSet or ReplicationController objects, other CRDs that embed pod templates, or image signature verification. Signature checks (cosign, Notary) are a separate control.
+- No support for ReplicaSet or ReplicationController objects, or other CRDs that embed pod templates.
+- No image signature verification. Report signatures authenticate the report store only; checking cosign or Notary signatures on the image, with an identity policy, is future work (see Kyverno `verifyImages` and the Sigstore policy-controller for the shape of it).
+- The cert-manager TLS mode is covered by `helm template` and kubeconform only, never by a cluster run.
+- The chart in `tls.mode=helm` reads the existing Secret with `lookup` and omits it on later revisions; a `helm upgrade` was not tested and may delete the Secret. Use cert-manager or an existing Secret for anything but demos.
 - ConfigMap-based report storage tops out at 1 MiB in total.

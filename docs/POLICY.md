@@ -41,10 +41,11 @@ A namespace entry replaces the default rule completely. It does not inherit from
 | `denyKev` | false | Deny when any finding is in the CISA KEV catalog, or the evidence source marks it as KEV. |
 | `requireDigest` | false | Deny images without a valid digest. Tags are mutable and are never resolved. |
 | `requireEvidence` | `deny` | What to do when there is no usable report: `deny`, `warn` or `allow`. Applies to missing reports, tag-only images when evidence is needed, and stale reports. |
-| `allowedRegistries` | empty (any) | Registry host or host plus path prefix. Matching is on path boundaries: `ghcr.io/org` does not match `ghcr.io/org2/app`. `docker.io` covers Docker Hub names. |
+| `allowedRegistries` | empty (any) | Registry host or host plus repository path prefix, validated with the same grammar as image references (see "Image references"). Matching is on whole path components: `ghcr.io/org` does not match `ghcr.io/org2/app`, and a prefix such as `ghcr.io/org/..` is rejected when the policy loads. `docker.io` covers Docker Hub names. |
 | `assetCriticality` | 4 | The `acr` input of the risk formula, 1 to 8, for every workload in the namespace. |
 | `maxEvidenceAge` | unset | Reports older than this count as missing. Needs a report timestamp (`CreatedAt`, else the file modification time). The kevgate HTTP provider has no timestamp, so the check is skipped for it. |
-| `ignoreUnfixed` | false | Drop findings with no fixed version before scoring. |
+| `ignoreUnfixed` | false | Drop findings with no fixed version before scoring, except findings in the CISA KEV catalog (or marked KEV by the evidence source), which are never dropped. See "Unfixed findings". |
+| `requireSignedEvidence` | false | Only trust scan reports whose detached signature verifies against a configured key. See "Signed evidence". |
 | `exceptions` | none | See below. At most 500 per rule. |
 
 Evidence is only looked up when a rule uses it: `maxRisk`, `denyKev`, or `requireEvidence` other than `allow`. A policy made only of `allowedRegistries` and `requireDigest` never touches the evidence source.
@@ -53,8 +54,46 @@ Evidence is only looked up when a rule uses it: `maxRisk`, `denyKev`, or `requir
 
 Two different situations are kept apart:
 
-- No report for the digest, or a stale one: follows `requireEvidence`.
+- No report for the digest, a stale one, or (with `requireSignedEvidence`) an unauthenticated one: follows `requireEvidence`.
 - The source itself fails (timeout, malformed or mismatched report, I/O error, panic): follows the server flag `--fail-mode`. With `closed` the request is denied under the rule name `evidenceError`. With `open` it is admitted with a warning.
+
+## Image references
+
+Every image is parsed before it is judged. A reference that cannot be pulled is denied under the rule name `imageRef`; it is never treated as merely unpinned. The grammar follows the OCI Distribution Specification (the name and reference patterns in "Pulling manifests") and the OCI Image Specification digest syntax (descriptor.md, "Digests"), with the registry host syntax of `github.com/distribution/reference`:
+
+- Printable ASCII only. No whitespace, control characters or non-ASCII bytes.
+- Registry host: a DNS name (RFC 1123 labels, at most 63 characters each), an IPv4 address, or a bracketed IPv6 address, with an optional port from 1 to 65535. Hosts are lower-cased. The first path component is a host when it contains `.` or `:`, is `localhost`, or contains an upper-case letter; otherwise the image is on Docker Hub, and `name` becomes `docker.io/library/name`.
+- Repository: path components of lower-case letters and digits joined by `.`, `_`, `__` or runs of `-`, separated by `/`, at most 255 characters. Components `.` and `..`, empty components, and upper-case letters are rejected, so `ghcr.io/org/../evil` is invalid instead of matching the prefix `ghcr.io/org`.
+- Tag: `[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}`.
+- Digest: `sha256:` plus 64 or `sha512:` plus 128 lower-case hex digits. Other algorithms are rejected because the report store is keyed by these two.
+- A bare 64 hex digit name with no host or namespace is an image ID, which runtimes built on `distribution/reference` also refuse.
+- At most 512 characters in total.
+
+Deliberately stricter than `distribution/reference`: ports outside 1 to 65535, host labels over 63 characters, underscores in host names, IPv6 literals that are not valid addresses, and the 512 character total are rejected. A differential fuzz run against that library in a scratch module found no other class of disagreement (see the README verification section).
+
+## Unfixed findings
+
+A finding with no fixed version in the report (`FixedVersion` empty, which Trivy also uses for "will not fix" and "affected") is called unfixed here.
+
+- `ignoreUnfixed: false` (default): unfixed findings are scored and judged like any other.
+- `ignoreUnfixed: true`: unfixed findings are dropped before scoring, so they count for neither `denyKev` nor `maxRisk`, with one exception that cannot be switched off: a finding that is in the CISA KEV catalog, or that the evidence source marks as KEV, is never dropped. A vulnerability that is exploited in the wild is the last one to ignore for lack of a fix. It still counts for `denyKev` and, with its KEV weight, for `maxRisk`.
+- Only an explicit exception (`cve:`, with justification and expiry) can waive a KEV finding without a fix.
+
+`maxRisk` is evaluated per finding, not summed: an image passes when no single finding scores above the limit, however many mid-risk findings it has. An unfixed finding that is not KEV scores like any other, using its CVSS, EPSS and the namespace's `assetCriticality`; with `ignoreUnfixed: true` it does not count at all.
+
+## Signed evidence
+
+Reports in the store are plain files, so whoever can write there can make an image look clean. `requireSignedEvidence: true` makes a rule trust only reports that carry a valid detached signature.
+
+- Server side: start with `--evidence-public-key-file keys.pem` (one or more PEM `PUBLIC KEY` blocks, Ed25519 or ECDSA P-256; several keys allow rotation). The directory provider then checks `<digest>.json.sig` next to every `<digest>.json`. In the chart: `evidence.publicKey.existingConfigMap`.
+- Signing side: `kevgate-admit keygen`, then `kevgate-admit sign-report -key priv.pem sha256-<hex>.json`, and `kevgate-admit verify-report -public-key pub.pem sha256-<hex>.json` to check offline. Keep the private key in the scan pipeline, not in the cluster.
+- What is signed: `"kevgate-admit report signature v1\n" + digest + "\n" + report bytes`. Binding the digest means a signed report copied to another digest's file name does not verify. The `.sig` file is the base64 of the signature (Ed25519 over the message; ECDSA over its SHA-256, ASN.1 DER).
+- Failure behaviour: a report that is unsigned, badly signed, signed by an untrusted key, or checked without any key configured is not scored and none of its findings are shown. It is treated as missing evidence, so `requireEvidence` decides: `deny` (default) rejects with the reason in the message (`scan report is unsigned`, `scan report signature is invalid`, `scan report cannot be authenticated`), `warn` admits with a warning, `allow` admits. A `requireEvidence` exception for the image applies as for any missing report.
+- The kevgate HTTP provider cannot carry signatures, so with `requireSignedEvidence` its answers count as unauthenticated.
+- If the policy sets `requireSignedEvidence` but no key is configured, every report is treated as unauthenticated and the server logs a warning at start.
+- Without the option, signatures are not consulted for decisions even when a key is configured.
+
+Scope: this authenticates the report store. It does not verify that the image bytes are what the report describes beyond the digest key, and it does not verify image signatures (cosign or Notary). A valid signature on an old report stays valid, so keep `maxEvidenceAge` set: the age comes from the signed `CreatedAt` field when the report has one, and from the unsigned file modification time otherwise.
 
 ## Exceptions
 

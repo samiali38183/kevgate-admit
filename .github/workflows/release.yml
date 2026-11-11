@@ -1,21 +1,31 @@
 name: release
 
-# Skeleton: publishes a signed image to GHCR when a version tag is pushed.
-# It has not been run. Check the first run on a throw-away tag before relying on it.
+# Publishes the image when a version tag is pushed: build, scan, push to GHCR,
+# sign the image digest with cosign (keyless, GitHub OIDC), attach and verify a
+# CycloneDX SBOM attestation. The image that is scanned is the image that is
+# pushed (built once, loaded into the local daemon, scanned, then pushed).
+#
+# Single platform (linux/amd64). Verify a published image with:
+#   cosign verify \
+#     --certificate-identity "https://github.com/<owner>/<repo>/.github/workflows/release.yml@refs/tags/<tag>" \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#     ghcr.io/<owner>/<repo>@sha256:<digest>
 on:
   push:
     tags: ["v*.*.*"]
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   image:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
-      packages: write
+      packages: write # push to GHCR
       id-token: write # keyless cosign signing
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,18 +41,61 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}
+          flavor: latest=false # a mutable tag would defeat digest pinning
           tags: |
             type=semver,pattern={{version}}
-      - id: build
+      - name: build the image into the local daemon
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          push: true
+          load: true
+          push: false
+          provenance: false
+          sbom: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: VERSION=${{ github.ref_name }}
+      - name: scan the image, fail on HIGH or CRITICAL
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - name: write a CycloneDX SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}
+          format: cyclonedx
+          output: sbom.cdx.json
+      - name: push and record the digest
+        id: push
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          docker push "${IMAGE}:${VERSION}"
+          ref="$(docker inspect --format '{{index .RepoDigests 0}}' "${IMAGE}:${VERSION}")"
+          digest="${ref#*@}"
+          case "$digest" in sha256:*) ;; *) echo "unexpected digest: $digest" >&2; exit 1 ;; esac
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Published image"
+            echo
+            echo "\`${IMAGE}@${digest}\` (tag \`${VERSION}\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: sign the image by digest (keyless)
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-          IMAGE: ghcr.io/${{ github.repository }}
+          DIGEST: ${{ steps.push.outputs.digest }}
         run: cosign sign --yes "${IMAGE}@${DIGEST}"
+      - name: attach the SBOM as a signed attestation
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign attest --yes --type cyclonedx --predicate sbom.cdx.json "${IMAGE}@${DIGEST}"
+      - name: verify the signature and the attestation as a consumer would
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          cosign verify --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "${IMAGE}@${DIGEST}"
+          cosign verify-attestation --type cyclonedx --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com "${IMAGE}@${DIGEST}" >/dev/null
