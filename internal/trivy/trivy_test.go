@@ -148,3 +148,36 @@ func FuzzParse(f *testing.F) {
 		}
 	})
 }
+
+// The fixture is real output from `trivy image --image-src remote -f json` (Trivy 0.76.2) for
+// python:3.9-slim-bullseye, trimmed to 10 vulnerabilities. Everything else in the other fixtures is
+// hand-written; this one shows the parser accepts what the scanner actually emits.
+func TestParseRealTrivyReport(t *testing.T) {
+	data, err := os.ReadFile("testdata/real-trivy-0.76.2-python-3.9-slim-bullseye.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Parse(data)
+	if err != nil {
+		t.Fatalf("real Trivy output rejected: %v", err)
+	}
+	if rep.ArtifactName != "python:3.9-slim-bullseye" {
+		t.Fatalf("artifact name = %q", rep.ArtifactName)
+	}
+	want := "sha256:b9e06687fbfc57f6fe563e94e4c8751e39513dde89afc120dc6f56afe5ffc761"
+	found := false
+	for _, d := range rep.Digests {
+		if d == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("repo digest %s not among report digests %v", want, rep.Digests)
+	}
+	if len(rep.Findings) == 0 {
+		t.Fatal("no findings parsed from a report that lists vulnerabilities")
+	}
+	if rep.CreatedAt.IsZero() {
+		t.Fatal("CreatedAt not parsed")
+	}
+}

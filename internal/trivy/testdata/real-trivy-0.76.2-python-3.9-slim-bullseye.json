@@ -1,0 +1,342 @@
+{
+ "SchemaVersion": 2,
+ "CreatedAt": "2026-11-11T03:43:42.1796945-05:00",
+ "ArtifactName": "python:3.9-slim-bullseye",
+ "ArtifactType": "container_image",
+ "Metadata": {
+  "Size": 128355840,
+  "OS": {
+   "Family": "debian",
+   "Name": "11.11",
+   "EOSL": true
+  },
+  "ImageID": "sha256:ed6f8d42e44570055a5b6c16df05ff3ad5d129ce4a3bfc8baefad15949952a3f",
+  "DiffIDs": [
+   "sha256:a07f4ed3adbe9f3131e7531782871ac8e2bd4abf9faf2292dbbf24e2e5746314",
+   "sha256:53a94dd4e08d5e7794da7fb66f3ea0814b924c7f60855e66b7196c0c2949f74e",
+   "sha256:045d684b6e252964aa840ea8905436e5d3825bc1fc6e2d86569c8b7844b65acd",
+   "sha256:f61b888276e677727f96bf3a9f5349a72df106cf97c7131a8f6df592c4040143"
+  ],
+  "RepoTags": [
+   "python:3.9-slim-bullseye"
+  ],
+  "RepoDigests": [
+   "python@sha256:b9e06687fbfc57f6fe563e94e4c8751e39513dde89afc120dc6f56afe5ffc761"
+  ],
+  "Reference": "python:3.9-slim-bullseye",
+  "ImageConfig": {
+   "architecture": "amd64",
+   "created": "2025-06-04T04:24:53Z",
+   "history": [
+    {
+     "created": "2025-06-04T04:24:53Z",
+     "created_by": "# debian.sh --arch 'amd64' out/ 'bullseye' '@1753056000'",
+     "comment": "debuerreotype 0.15"
+    },
+    {
+     "created": "2025-06-04T04:24:53Z",
+     "created_by": "ENV PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+     "comment": "buildkit.dockerfile.v0",
+     "empty_layer": true
+    },
+    {
+     "created": "2025-06-04T04:24:53Z",
+     "created_by": "ENV LANG=C.UTF-8",
+     "comment": "buildkit.dockerfile.v0",
+     "empty_layer": true
+    },
+    {
+     "created": "2025-06-04T04:24:53Z",
+     "created_by": "RUN /bin/sh -c set -eux; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tca-certificates \t\tnetbase \t\ttzdata \t; \trm -rf /var/lib/apt/lists/* # buildkit",
+     "comment": "buildkit.dockerfile.v0"
+    },
+    {
+     "created": "2025-06-04T04:24:53Z",
+     "created_by": "ENV GPG_KEY=E3FF2839C048B25C084DEBE9B26995E310250568",
+     "comment": "buildkit.dockerfile.v0",
+     "empty_layer": true
+    },
+    {
+     "created": "2025-06-04T04:24:53Z",
+     "created_by": "ENV PYTHON_VERSION=3.9.23",
+     "comment": "buildkit.dockerfile.v0",
+     "empty_layer": true
+    },
+    {
+     "created": "2025-06-04T04:24:53Z",
+     "created_by": "ENV PYTHON_SHA256=61a42919e13d539f7673cf11d1c404380e28e540510860b9d242196e165709c9",
+     "comment": "buildkit.dockerfile.v0",
+     "empty_layer": true
+    },
+    {
+     "created": "2025-06-04T04:24:53Z",
+     "created_by": "RUN /bin/sh -c set -eux; \t\tsavedAptMark=\"$(apt-mark showmanual)\"; \tapt-get update; \tapt-get install -y --no-install-recommends \t\tdpkg-dev \t\tgcc \t\tgnupg \t\tlibbluetooth-dev \t\tlibbz2-dev \t\tlibc6-dev \t\tlibdb-dev \t\tlibffi-dev \t\tlibgdbm-dev \t\tliblzma-dev \t\tlibncursesw5-dev \t\tlibreadline-dev \t\tlibsqlite3-dev \t\tlibssl-dev \t\tmake \t\ttk-dev \t\tuuid-dev \t\twget \t\txz-utils \t\tzlib1g-dev \t; \t\twget -O python.tar.xz \"https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz\"; \techo \"$PYTHON_SHA256 *python.tar.xz\" | sha256sum -c -; \twget -O python.tar.xz.asc \"https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz.asc\"; \tGNUPGHOME=\"$(mktemp -d)\"; export GNUPGHOME; \tgpg --batch --keyserver hkps://keys.openpgp.org --recv-keys \"$GPG_KEY\"; \tgpg --batch --verify python.tar.xz.asc python.tar.xz; \tgpgconf --kill all; \trm -rf \"$GNUPGHOME\" python.tar.xz.asc; \tmkdir -p /usr/src/python; \ttar --extract --directory /usr/src/python --strip-components=1 --file python.tar.xz; \trm python.tar.xz; \t\tcd /usr/src/python; \tgnuArch=\"$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)\"; \t./configure \t\t--build=\"$gnuArch\" \t\t--enable-loadable-sqlite-extensions \t\t--enable-optimizations \t\t--enable-option-checking=fatal \t\t--enable-shared \t\t--with-ensurepip \t; \tnproc=\"$(nproc)\"; \tEXTRA_CFLAGS=\"$(dpkg-buildflags --get CFLAGS)\"; \tLDFLAGS=\"$(dpkg-buildflags --get LDFLAGS)\"; \tLDFLAGS=\"${LDFLAGS:--Wl},--strip-all\"; \tmake -j \"$nproc\" \t\t\"EXTRA_CFLAGS=${EXTRA_CFLAGS:-}\" \t\t\"LDFLAGS=${LDFLAGS:-}\" \t; \trm python; \tmake -j \"$nproc\" \t\t\"EXTRA_CFLAGS=${EXTRA_CFLAGS:-}\" \t\t\"LDFLAGS=${LDFLAGS:--Wl},-rpath='\\$\\$ORIGIN/../lib'\" \t\tpython \t; \tmake install; \t\tcd /; \trm -rf /usr/src/python; \t\tfind /usr/local -depth \t\t\\( \t\t\t\\( -type d -a \\( -name test -o -name tests -o -name idle_test \\) \\) \t\t\t-o \\( -type f -a \\( -name '*.pyc' -o -name '*.pyo' -o -name 'libpython*.a' \\) \\) \t\t\\) -exec rm -rf '{}' + \t; \t\tldconfig; \t\tapt-mark auto '.*' > /dev/null; \tapt-mark manual $savedAptMark; \tfind /usr/local -type f -executable -not \\( -name '*tkinter*' \\) -exec ldd '{}' ';' \t\t| awk '/=>/ { so = $(NF-1); if (index(so, \"/usr/local/\") == 1) { next }; gsub(\"^/(usr/)?\", \"\", so); printf \"*%s\\n\", so }' \t\t| sort -u \t\t| xargs -r dpkg-query --search \t\t| cut -d: -f1 \t\t| sort -u \t\t| xargs -r apt-mark manual \t; \tapt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \trm -rf /var/lib/apt/lists/*; \t\texport PYTHONDONTWRITEBYTECODE=1; \tpython3 --version; \t\tpip3 install \t\t--disable-pip-version-check \t\t--no-cache-dir \t\t--no-compile \t\t'setuptools==58.1.0' \t\t'wheel<0.46' \t; \tpip3 --version # buildkit",
+     "comment": "buildkit.dockerfile.v0"
+    },
+    {
+     "created": "2025-06-04T04:24:53Z",
+     "created_by": "RUN /bin/sh -c set -eux; \tfor src in idle3 pip3 pydoc3 python3 python3-config; do \t\tdst=\"$(echo \"$src\" | tr -d 3)\"; \t\t[ -s \"/usr/local/bin/$src\" ]; \t\t[ ! -e \"/usr/local/bin/$dst\" ]; \t\tln -svT \"$src\" \"/usr/local/bin/$dst\"; \tdone # buildkit",
+     "comment": "buildkit.dockerfile.v0"
+    },
+    {
+     "created": "2025-06-04T04:24:53Z",
+     "created_by": "CMD [\"python3\"]",
+     "comment": "buildkit.dockerfile.v0",
+     "empty_layer": true
+    }
+   ],
+   "os": "linux",
+   "rootfs": {
+    "type": "layers",
+    "diff_ids": [
+     "sha256:a07f4ed3adbe9f3131e7531782871ac8e2bd4abf9faf2292dbbf24e2e5746314",
+     "sha256:53a94dd4e08d5e7794da7fb66f3ea0814b924c7f60855e66b7196c0c2949f74e",
+     "sha256:045d684b6e252964aa840ea8905436e5d3825bc1fc6e2d86569c8b7844b65acd",
+     "sha256:f61b888276e677727f96bf3a9f5349a72df106cf97c7131a8f6df592c4040143"
+    ]
+   },
+   "config": {
+    "Cmd": [
+     "python3"
+    ],
+    "Env": [
+     "PATH=/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+     "LANG=C.UTF-8",
+     "GPG_KEY=E3FF2839C048B25C084DEBE9B26995E310250568",
+     "PYTHON_VERSION=3.9.23",
+     "PYTHON_SHA256=61a42919e13d539f7673cf11d1c404380e28e540510860b9d242196e165709c9"
+    ]
+   }
+  },
+  "Layers": [
+   {
+    "Size": 84224000,
+    "Digest": "sha256:ccaf924377f936af2c0396fce237145b7d1ecc0b8196916667fc6d5ff4866e2d",
+    "DiffID": "sha256:a07f4ed3adbe9f3131e7531782871ac8e2bd4abf9faf2292dbbf24e2e5746314"
+   },
+   {
+    "Size": 3394048,
+    "Digest": "sha256:41552ab592e76c41784983dfa0ce81756adf23003bf5fd2b3cfcd85b8ea7cf14",
+    "DiffID": "sha256:53a94dd4e08d5e7794da7fb66f3ea0814b924c7f60855e66b7196c0c2949f74e"
+   },
+   {
+    "Size": 40732672,
+    "Digest": "sha256:204f9764bd9cde668ca81622b2652247d139b76c965c1ace64be2d2622890d1a",
+    "DiffID": "sha256:045d684b6e252964aa840ea8905436e5d3825bc1fc6e2d86569c8b7844b65acd"
+   },
+   {
+    "Size": 5120,
+    "Digest": "sha256:7006e6b111bd7d707617436bd7900d8e831c3f9ef79886fc065c1c269a73cff1",
+    "DiffID": "sha256:f61b888276e677727f96bf3a9f5349a72df106cf97c7131a8f6df592c4040143"
+   }
+  ]
+ },
+ "Results": [
+  {
+   "Target": "python:3.9-slim-bullseye (debian 11.11)",
+   "Class": "os-pkgs",
+   "Type": "debian",
+   "Vulnerabilities": [
+    {
+     "VulnerabilityID": "CVE-2026-109518",
+     "PkgName": "apt",
+     "InstalledVersion": "2.2.4",
+     "Severity": "HIGH",
+     "CVSS": {
+      "redhat": {
+       "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H",
+       "V3Score": 8.1
+      }
+     },
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-109518",
+     "Title": "apt: apt: Remote code execution via hard link reuse during package download retries"
+    },
+    {
+     "VulnerabilityID": "CVE-2022-3715",
+     "PkgName": "bash",
+     "InstalledVersion": "5.1-2+deb11u1",
+     "Severity": "HIGH",
+     "CVSS": {
+      "nvd": {
+       "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+       "V3Score": 7.8
+      },
+      "redhat": {
+       "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:H",
+       "V3Score": 6.6
+      }
+     },
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2022-3715",
+     "Title": "bash: a heap-buffer-overflow in valid_parameter_transform"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-53613",
+     "PkgName": "bsdutils",
+     "InstalledVersion": "1:2.36.1-8+deb11u2",
+     "Severity": "HIGH",
+     "CVSS": {
+      "redhat": {
+       "V3Vector": "CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:H",
+       "V3Score": 7
+      }
+     },
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-53613",
+     "Title": "util-linux: TOCTOU in the mount program via ancestor directory swap on target path"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-53615",
+     "PkgName": "bsdutils",
+     "InstalledVersion": "1:2.36.1-8+deb11u2",
+     "Severity": "HIGH",
+     "CVSS": {
+      "redhat": {
+       "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:L/I:H/A:H",
+       "V3Score": 8
+      }
+     },
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-53615",
+     "Title": "util-linux: util-linux: Partition metadata compromise via integer overflow in DOS partition parser"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-76642",
+     "PkgName": "bsdutils",
+     "InstalledVersion": "1:2.36.1-8+deb11u2",
+     "Severity": "HIGH",
+     "CVSS": {
+      "redhat": {
+       "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+       "V3Score": 7.8
+      }
+     },
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-76642",
+     "Title": "util-linux: util-linux: failed external mount helper still runs privileged X-mount post-hooks"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-78408",
+     "PkgName": "bsdutils",
+     "InstalledVersion": "1:2.36.1-8+deb11u2",
+     "Severity": "HIGH",
+     "CVSS": {
+      "redhat": {
+       "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:L/UI:R/S:C/C:N/I:H/A:H",
+       "V3Score": 7.9
+      }
+     },
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-78408",
+     "Title": "util-linux: util-linux: nsenter --join-cgroup leaks root cgroup migration authority"
+    }
+   ]
+  },
+  {
+   "Target": "Python",
+   "Class": "lang-pkgs",
+   "Type": "python-pkg",
+   "Vulnerabilities": [
+    {
+     "VulnerabilityID": "CVE-2022-40897",
+     "PkgName": "setuptools",
+     "InstalledVersion": "58.1.0",
+     "FixedVersion": "65.5.1",
+     "Severity": "HIGH",
+     "CVSS": {
+      "bitnami": {
+       "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H",
+       "V3Score": 5.9
+      },
+      "ghsa": {
+       "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+       "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:H/SC:L/SI:L/SA:N",
+       "V3Score": 7.5,
+       "V40Score": 8.7
+      },
+      "nvd": {
+       "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H",
+       "V3Score": 5.9
+      },
+      "redhat": {
+       "V3Vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H",
+       "V3Score": 5.9
+      }
+     },
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2022-40897",
+     "Title": "pypa-setuptools: Regular Expression Denial of Service (ReDoS) in package_index.py"
+    },
+    {
+     "VulnerabilityID": "CVE-2024-6345",
+     "PkgName": "setuptools",
+     "InstalledVersion": "58.1.0",
+     "FixedVersion": "70.0.0",
+     "Severity": "HIGH",
+     "CVSS": {
+      "bitnami": {
+       "V3Vector": "CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
+       "V3Score": 8.8
+      },
+      "ghsa": {
+       "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
+       "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:A/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N",
+       "V3Score": 8.8,
+       "V40Score": 7.5
+      },
+      "redhat": {
+       "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
+       "V3Score": 8.8
+      }
+     },
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2024-6345",
+     "Title": "pypa/setuptools: Remote code execution via download functions in the package_index module in pypa/setuptools"
+    },
+    {
+     "VulnerabilityID": "CVE-2025-47273",
+     "PkgName": "setuptools",
+     "InstalledVersion": "58.1.0",
+     "FixedVersion": "78.1.1",
+     "Severity": "HIGH",
+     "CVSS": {
+      "bitnami": {
+       "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:H/VA:N/SC:N/SI:N/SA:N/E:P",
+       "V40Score": 7.7
+      },
+      "ghsa": {
+       "V40Vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:H/VA:N/SC:N/SI:N/SA:N/E:P",
+       "V40Score": 7.7
+      },
+      "nvd": {
+       "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H",
+       "V3Score": 8.8
+      },
+      "redhat": {
+       "V3Vector": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:H/A:L",
+       "V3Score": 7.1
+      }
+     },
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2025-47273",
+     "Title": "setuptools: Path Traversal Vulnerability in setuptools PackageIndex"
+    },
+    {
+     "VulnerabilityID": "CVE-2026-24049",
+     "PkgName": "wheel",
+     "InstalledVersion": "0.45.1",
+     "FixedVersion": "0.46.2",
+     "Severity": "HIGH",
+     "CVSS": {
+      "ghsa": {
+       "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:H/A:H",
+       "V3Score": 7.1
+      },
+      "nvd": {
+       "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:H/A:N",
+       "V3Score": 5.5
+      },
+      "redhat": {
+       "V3Vector": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:H/A:H",
+       "V3Score": 7.1
+      }
+     },
+     "PrimaryURL": "https://avd.aquasec.com/nvd/cve-2026-24049",
+     "Title": "wheel: wheel: Privilege Escalation or Arbitrary Code Execution via malicious wheel file unpacking"
+    }
+   ]
+  }
+ ]
+}
