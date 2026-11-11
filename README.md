@@ -105,7 +105,7 @@ Measured on a Windows workstation with Go 1.27.4:
 - `actionlint`, `shellcheck` and `zizmor --offline` are clean.
 - The race detector needs cgo and a C compiler, which this workstation does not have, so `go test -race` has not been run locally. CI runs it.
 
-Verified by CI on GitHub Actions (see the badges above): the Docker build, the kind end to end run including the outage test, hadolint, gosec, govulncheck, the Trivy filesystem and image scans, gitleaks, and `go test -race`.
+Verified by CI on GitHub Actions (see the badges above; the release workflow has run once, for v0.1.0): the Docker build, the kind end to end run including the outage test, hadolint, gosec, govulncheck, the Trivy filesystem and image scans, gitleaks, and `go test -race`.
 
 ## End to end transcript
 
@@ -248,6 +248,27 @@ RESULT resumed-allow-clean: PASS
 
 outage test finished: all checks passed
 ```
+
+
+## Published image
+
+`v0.1.0` was released by the `release` workflow ([run 43080641309](https://github.com/samiali38183/kevgate-admit/actions/runs/43080641309)): the image is built once, scanned with Trivy (HIGH and CRITICAL fail the job), pushed, signed with cosign (keyless, GitHub OIDC), given a CycloneDX SBOM attestation, and both are verified in the same run. Single platform, linux/amd64.
+
+```text
+ghcr.io/samiali38183/kevgate-admit:0.1.0
+ghcr.io/samiali38183/kevgate-admit@sha256:1023382754d9b6b7ca727d47701d9e3bfb5f245a6531e0debd1307ebf9e64195
+```
+
+Anonymous pull of the manifest works (checked with the registry API). The chart's default image (`tag` empty, so the chart `appVersion` 0.1.0) now exists. Verify before use:
+
+```sh
+cosign verify \
+  --certificate-identity https://github.com/samiali38183/kevgate-admit/.github/workflows/release.yml@refs/tags/v0.1.0 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/samiali38183/kevgate-admit@sha256:1023382754d9b6b7ca727d47701d9e3bfb5f245a6531e0debd1307ebf9e64195
+```
+
+The signature proves this workflow built and pushed the image. It is not something the webhook checks at admission time.
 
 ## Configuration
 
