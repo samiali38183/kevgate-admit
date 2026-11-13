@@ -63,5 +63,5 @@ The e2e workflow tests the first layer: it scales the webhook to zero and checks
 - No support for ReplicaSet or ReplicationController objects, or other CRDs that embed pod templates.
 - No image signature verification. Report signatures authenticate the report store only; checking cosign or Notary signatures on the image, with an identity policy, is future work (see Kyverno `verifyImages` and the Sigstore policy-controller for the shape of it).
 - The cert-manager TLS mode is covered by `helm template` and kubeconform only, never by a cluster run.
-- The chart in `tls.mode=helm` reads the existing Secret with `lookup` and omits it on later revisions; a `helm upgrade` was not tested and may delete the Secret. Use cert-manager or an existing Secret for anything but demos.
+- The chart in `tls.mode=helm` reads the existing Secret with `lookup` and renders it again unchanged on later revisions (omitting it would make Helm delete it on upgrade); `deploy/demo/upgrade.sh` checks this in CI. The certificate is not rotated. Use cert-manager or an existing Secret for anything but demos.
 - ConfigMap-based report storage tops out at 1 MiB in total.
