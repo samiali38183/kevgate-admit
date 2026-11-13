@@ -4,18 +4,18 @@
 [![e2e-kind](https://github.com/samiali38183/kevgate-admit/actions/workflows/e2e-kind.yml/badge.svg)](https://github.com/samiali38183/kevgate-admit/actions/workflows/e2e-kind.yml)
 [![security](https://github.com/samiali38183/kevgate-admit/actions/workflows/security.yml/badge.svg)](https://github.com/samiali38183/kevgate-admit/actions/workflows/security.yml)
 
-A Kubernetes validating admission webhook, written in Go, that refuses to start workloads whose container images carry CISA KEV-listed vulnerabilities or a risk score over a per-namespace limit. It decides from scan reports for the exact image digest, not from tags, and it does not scan images itself.
+kevgate-admit is a Kubernetes validating admission webhook, written in Go. It refuses workloads whose container images carry CISA KEV-listed vulnerabilities or a risk score over a per-namespace limit. It decides from scan reports for the exact image digest, never from tags, and it does not scan images itself.
 
 | | |
 |---|---|
 | Decision | allow, allow with a warning (audit mode), or deny with the findings and the rule that fired |
-| Scoring | the same formula as [kevgate](https://github.com/samiali38183/kevgate); the Go version matches the Python one on 1,000 generated vectors (checked in `internal/risk`) |
-| Cluster evidence | the [`e2e-kind`](.github/workflows/e2e-kind.yml) workflow installs the chart on a kind cluster, asserts allow, deny and warn outcomes, then takes the webhook down and shows what `failurePolicy: Fail` and `Ignore` do ([transcripts](docs/E2E.md)) |
-| Tests | `go test -race` in CI with an 85% coverage floor; last run 95.0%. Three fuzz targets (image references, Trivy reports, AdmissionReview decoding) run in CI for 30 s each |
-| Release | `v0.1.0` image on GHCR, signed with cosign (keyless) and attested with a CycloneDX SBOM ([verify](#published-image)) |
-| Not covered | image signature verification at admission, scanning, a multi-replica or production design; see [Limitations](#limitations) |
+| Scoring | the same formula as [kevgate](https://github.com/samiali38183/kevgate). The Go version matches the Python one on 1,000 generated vectors (checked in `internal/risk`) |
+| Cluster evidence | the [`e2e-kind`](.github/workflows/e2e-kind.yml) workflow installs the chart on a kind cluster and asserts allow, deny and warn outcomes. It then takes the webhook down and shows what `failurePolicy: Fail` and `Ignore` do ([transcripts](docs/E2E.md)). |
+| Tests | `go test -race` in CI with an 85% coverage floor (last run 95.0%). Three fuzz targets (image references, Trivy reports, AdmissionReview decoding) run in CI for 30 s each. |
+| Release | `v0.1.0` image on GHCR, signed with cosign (keyless) and attested with a CycloneDX SBOM ([verify](#published-image)). |
+| Not covered | image signature verification at admission, scanning, and a multi-replica or production design. See [Limitations](#limitations). |
 
-Example of a deny, from `TestDemoScenarios` (a real TLS server answering AdmissionReviews built from synthetic fixtures in `deploy/demo`), for a Deployment in a namespace with `denyKev: true` and `maxRisk: 40`:
+A deny for a Deployment in a namespace with `denyKev: true` and `maxRisk: 40`. It comes from `TestDemoScenarios`, which runs a real TLS server and feeds it AdmissionReviews built from the synthetic fixtures in `deploy/demo`:
 
 ```
 kevgate-admit: request denied by policy (namespace "demo-enforce", scope "demo-enforce")
@@ -25,7 +25,7 @@ kevgate-admit: request denied by policy (namespace "demo-enforce", scope "demo-e
     CVE-2021-44228   KEV  risk  87.5  log4j-core 2.14.1 (fixed 2.17.1)
 ```
 
-The evidence used in all demos is synthetic. No real scan data is included.
+All demo evidence is synthetic. The repository has no real scan data.
 
 ## What it does
 
@@ -33,10 +33,10 @@ For CREATE and UPDATE of Pod, Deployment, StatefulSet, DaemonSet, Job and CronJo
 
 1. Extract every container, init container and ephemeral container image.
 2. Parse each reference strictly (OCI grammar: no dot segments, lower-case repositories, valid hosts) without ever resolving a tag. Only a digest identifies an image.
-3. Look up the report for each digest (a directory or ConfigMap of `sha256-<hex>.json` files, optionally a kevgate HTTP API as a fallback). With `requireSignedEvidence`, only reports whose detached signature (`sha256-<hex>.json.sig`) verifies against a configured public key are trusted.
+3. Look up the report for each digest: a directory or ConfigMap of `sha256-<hex>.json` files, with a kevgate HTTP API as an optional fallback. With `requireSignedEvidence`, only reports whose detached signature (`sha256-<hex>.json.sig`) verifies against a configured public key are trusted.
 4. Score each finding: `risk = 100 * (0.40*kev + 0.25*acr/8 + 0.20*epss + 0.20*cvss/10) / 1.05`, rounded to one decimal.
 5. Apply the namespace rule: `denyKev`, `maxRisk`, `requireDigest`, `requireEvidence`, `requireSignedEvidence`, `allowedRegistries`, exceptions with expiry, audit mode.
-6. Answer with an AdmissionReview v1 response: allow, allow with warnings, or deny with a message listing the top findings and the rule that fired.
+6. Answer with an AdmissionReview v1 response: allow, allow with warnings, or deny with a message that lists the top findings and the rule that fired.
 
 ```mermaid
 flowchart LR
@@ -81,7 +81,7 @@ bin/kevgate-admit verify-report -public-key report-key.pub.pem /tmp/reports/sha2
 # serve with: --evidence-dir /tmp/reports --evidence-public-key-file report-key.pub.pem, and requireSignedEvidence: true in the policy
 ```
 
-Install into a cluster with the chart (see `deploy/helm/kevgate-admit/values.yaml`). `tls.mode=helm` generates a CA and certificate for kind and demos, `tls.mode=certManager` creates a cert-manager Certificate, `tls.mode=existingSecret` uses a secret you provide.
+To install into a cluster, use the chart (see `deploy/helm/kevgate-admit/values.yaml`). `tls.mode=helm` generates a CA and certificate for kind and demos, `tls.mode=certManager` creates a cert-manager Certificate, and `tls.mode=existingSecret` uses a Secret you provide.
 
 ## More examples
 
@@ -100,30 +100,32 @@ kevgate-admit audit: would deny [maxRisk] registry.example.com/demo/over-thresho
 
 ## Verification
 
-Checked by CI on every push (see the badges above): `go test -race` with a coverage floor, the Docker build, the kind end to end run including the outage test and a `helm upgrade` check, hadolint, gosec, govulncheck, Trivy filesystem and image scans, and gitleaks. The release workflow has run once, for `v0.1.0`.
+CI runs these on every push (see the badges): `go test -race` with a coverage floor, the Docker build, the kind end-to-end run (including the outage test and a `helm upgrade` check), hadolint, gosec, govulncheck, Trivy filesystem and image scans, and gitleaks. The release workflow has run once, for `v0.1.0`.
 
-Measured on a Windows workstation with Go 1.27.4 (not repeated in CI):
+Some checks I ran only on my Windows machine with Go 1.27.4, so CI does not repeat them:
 
-- Three fuzz targets ran for 60 seconds each with no findings: image references, the Trivy parser and the AdmissionReview decoder. Seed corpora are in `testdata/fuzz`; they include the inputs an earlier version of the parser wrongly accepted (`::0`, an invalid UTF-8 host, `ghcr.io/org/../evil`).
-- The image reference parser was compared against `github.com/distribution/reference` with a differential fuzz target in a scratch module (not in this repository). A 120 second run found no input that this parser accepts and that library rejects. The inputs it rejects and the library accepts are the deliberate differences listed in the policy reference (port range, host label length and underscores, invalid IPv6 literals, the 512 character total, non-sha256/512 digests, non-ASCII).
-- `go vet`, `golangci-lint` (with gosec, errorlint, bodyclose and others), `govulncheck` and `trivy fs` report nothing; `helm lint --strict` and `helm template | kubeconform -strict` are clean for the default values and for a values file that enables every optional template; `actionlint`, `shellcheck` and `zizmor --offline` are clean.
+- I fuzzed the image reference parser, the Trivy parser and the AdmissionReview decoder locally with no findings. The seed corpora are in `testdata/fuzz`. They include inputs an earlier version of the parser wrongly accepted (`::0`, an invalid UTF-8 host, `ghcr.io/org/../evil`).
+- I compared the image reference parser with `github.com/distribution/reference` using a differential fuzz target in a scratch module that is not in this repository. I found no input that this parser accepts and that library rejects. The reverse does happen, on purpose: the policy reference lists the deliberate differences (port range, host label length and underscores, invalid IPv6 literals, the 512 character total, digests other than sha256 and sha512, non-ASCII).
+- `golangci-lint` (with gosec, errorlint, bodyclose and others) and `trivy fs` report nothing. `helm lint --strict` and `helm template | kubeconform -strict` are clean for the default values and for a values file that turns on every optional template. `zizmor --offline` is clean.
 
 ## End to end on kind
 
-`deploy/demo/demo.sh` builds the image, creates a kind cluster, installs the chart with `tls.mode=helm` (a CA and serving certificate generated at install time) and the synthetic evidence, applies five demo workloads and fails unless every outcome and denial text matches. `deploy/demo/outage.sh` then scales the webhook to zero and asserts what the API server does under `failurePolicy: Fail` (rejects the Pod) and `Ignore` (admits a Pod the policy would deny), that `kube-system` and the webhook namespace are never gated, and that decisions resume after recovery. `deploy/demo/upgrade.sh` runs `helm upgrade` and asserts the generated TLS Secret and the webhook `caBundle` are unchanged.
+`deploy/demo/demo.sh` builds the image, creates a kind cluster and installs the chart with `tls.mode=helm` (a CA and serving certificate generated at install time) and the synthetic evidence. It applies five demo workloads and fails unless every outcome and denial text matches.
 
-The unedited transcripts are in [docs/E2E.md](docs/E2E.md). The cert-manager TLS path is not exercised in CI; it is only covered by `helm template | kubeconform`. The outage test does not cover `--fail-mode`, slow responses, node drains with the PodDisruptionBudget, or more than one replica.
+`deploy/demo/outage.sh` then scales the webhook to zero and checks what the API server does under `failurePolicy: Fail` (rejects the Pod) and `Ignore` (admits a Pod the policy would deny). It also checks that `kube-system` and the webhook namespace are never gated, and that decisions resume after recovery. `deploy/demo/upgrade.sh` runs `helm upgrade` and checks that the generated TLS Secret and the webhook `caBundle` are unchanged.
+
+The unedited transcripts are in [docs/E2E.md](docs/E2E.md). CI does not exercise the cert-manager TLS path. `helm template | kubeconform` is its only check. The outage test does not cover `--fail-mode`, slow responses, node drains with the PodDisruptionBudget, or more than one replica.
 
 ## Published image
 
-`v0.1.0` was released by the `release` workflow ([run 43080641309](https://github.com/samiali38183/kevgate-admit/actions/runs/43080641309)): the image is built once, scanned with Trivy (HIGH and CRITICAL fail the job), pushed, signed with cosign (keyless, GitHub OIDC), given a CycloneDX SBOM attestation, and both are verified in the same run. Single platform, linux/amd64.
+The `release` workflow published `v0.1.0` ([run 43080641309](https://github.com/samiali38183/kevgate-admit/actions/runs/43080641309)). It builds the image once, scans it with Trivy (HIGH and CRITICAL fail the job), pushes it, signs it with cosign (keyless, GitHub OIDC), attaches a CycloneDX SBOM attestation, and verifies both in the same run. The image is linux/amd64 only.
 
 ```text
 ghcr.io/samiali38183/kevgate-admit:0.1.0
 ghcr.io/samiali38183/kevgate-admit@sha256:1023382754d9b6b7ca727d47701d9e3bfb5f245a6531e0debd1307ebf9e64195
 ```
 
-Anonymous pull of the manifest works (checked with the registry API). The chart's default image (`tag` empty, so the chart `appVersion` 0.1.0) now exists. Verify before use:
+An anonymous pull of the manifest works (I checked against the registry API on 2026-11-13). The chart's default image (`tag` empty, so the chart `appVersion` 0.1.0) exists. To verify it:
 
 ```sh
 cosign verify \
@@ -132,7 +134,7 @@ cosign verify \
   ghcr.io/samiali38183/kevgate-admit@sha256:1023382754d9b6b7ca727d47701d9e3bfb5f245a6531e0debd1307ebf9e64195
 ```
 
-The signature proves this workflow built and pushed the image. It is not something the webhook checks at admission time.
+The signature shows that this workflow built and pushed the image. The webhook does not check it at admission time.
 
 ## Configuration
 
@@ -163,13 +165,13 @@ Documentation: [end to end transcripts](docs/E2E.md), [policy reference](docs/PO
 ## Limitations
 
 - It does not scan images. A digest with no report is "no evidence", handled by `requireEvidence`.
-- Reports go stale. `maxEvidenceAge` bounds it when the report carries a timestamp (a signed one when the report has `CreatedAt`; otherwise the unsigned file modification time).
-- Report signatures authenticate the report store only. There is no image signature or attestation verification (cosign, Notary); that is future work, and Kyverno `verifyImages` or the Sigstore policy-controller already do it.
+- Reports go stale. `maxEvidenceAge` limits how old one can be when it has a timestamp: the signed `CreatedAt` if the report has one, otherwise the file modification time, which is not signed.
+- Report signatures authenticate the report store only. The webhook does not verify image signatures or attestations (cosign, Notary). Kyverno `verifyImages` and the Sigstore policy-controller already do that, and I have not built it.
 - The policy and the KEV catalog are unsigned ConfigMaps; whoever can edit them controls enforcement.
 - The cert-manager TLS mode is checked with `helm template` and kubeconform only; no cluster run covers it.
-- `tls.mode=helm` is for kind and demos: the CA and certificate are generated once, valid for 10 years, and not rotated. Use cert-manager or an existing Secret elsewhere.
+- `tls.mode=helm` is for kind and demos. The CA and certificate are generated once, valid for 10 years, and never rotated. Elsewhere, use cert-manager or an existing Secret.
 - Exceptions are policy entries with an expiry date, not signed attestations. Whoever can edit the policy can add one.
-- ConfigMaps are limited to 1 MiB in total, which is a few hundred typical reports. Use a volume for more.
+- A ConfigMap holds at most 1 MiB, which is a few hundred reports of typical size. Use a volume for more.
 
 ## Development
 
