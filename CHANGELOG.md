@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- With `tls.mode=helm`, `helm upgrade` now keeps the generated TLS Secret and the webhook `caBundle`. The chart reads the existing Secret with `lookup` and renders it unchanged. Before this, the Secret dropped out of the manifest on the first upgrade and Helm deleted it. `deploy/demo/upgrade.sh` checks this in the `e2e-kind` workflow.
+- The end-to-end transcripts moved from the README to `docs/E2E.md`.
+
 ## 0.1.0
 
 First release.
@@ -16,7 +21,7 @@ First release.
 - Fail-closed or fail-open handling of evidence source errors.
 - Structured JSON logs, Prometheus metrics, `/healthz` and `/readyz`.
 
-### Hardening since the first review
+### Hardening before the release
 
 - Image references are parsed with the OCI distribution grammar. Rejected now: dot and empty path components (`ghcr.io/org/../evil`), upper-case repositories, invalid UTF-8 and non-ASCII bytes, malformed hosts and IPv6 literals (`::0`), ports outside 1 to 65535, bad tags and digests, names over the length limits. `allowedRegistries` entries are validated with the same rules and match on whole path components.
 - `ignoreUnfixed` never drops a finding that is in the CISA KEV catalog or marked KEV by the evidence source; it was possible before for an exploited CVE with no fix to pass `denyKev`.
@@ -32,4 +37,4 @@ First release.
 ### Not in this release
 
 - Image signature or attestation verification (cosign, Notary) at admission time.
-- A cluster run of the cert-manager TLS mode, of `helm upgrade` in `tls.mode=helm`, or of node drains with the PodDisruptionBudget.
+- A cluster run of the cert-manager TLS mode, or of node drains with the PodDisruptionBudget. (`helm upgrade` in `tls.mode=helm` got a cluster test after this release; see Unreleased.)

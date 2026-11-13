@@ -4,7 +4,7 @@ Scope: the kevgate-admit webhook, its inputs (policy, KEV catalog, EPSS CSV, evi
 
 Assets: the integrity of allow and deny decisions, availability of workload admission, the policy and evidence data.
 
-Trust boundaries: the API server to the webhook (mutual trust through the CA bundle in the webhook configuration), the webhook to its mounted files, and the optional webhook to kevgate HTTP call.
+Trust boundaries: the API server to the webhook (the API server checks the webhook certificate against the CA bundle in the webhook configuration), the webhook to its mounted files, and the optional webhook to kevgate HTTP call.
 
 ## Spoofing
 

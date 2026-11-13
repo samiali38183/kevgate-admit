@@ -75,7 +75,7 @@ What this shows, and what it does not:
 
 - Under `Fail` a Pod create is rejected while the webhook is down, and nothing is created. The excluded namespaces (`kube-system`, the webhook's namespace) keep admitting, which is what lets the webhook come back.
 - Under `Ignore` the same outage admits a Pod that the policy denies (a tag-only image in an enforcing namespace). That is the bypass window of that setting.
-- It does not test `--fail-mode` (the webhook answering but unable to judge), slow responses or timeouts at the API server, node drains with the PodDisruptionBudget, or `helm upgrade`. The demo runs one replica.
+- It does not test `--fail-mode` (the webhook answering but unable to judge), slow responses or timeouts at the API server, or node drains with the PodDisruptionBudget. The demo runs one replica. `helm upgrade` is checked in a separate step, `deploy/demo/upgrade.sh`.
 
 Unedited output of that step from a passing run (timestamps trimmed; run <https://github.com/samiali38183/kevgate-admit/actions/runs/43042286763>):
 
