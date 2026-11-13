@@ -48,6 +48,11 @@ jobs:
         # webhook and asserts that allow and deny decisions resume.
         run: deploy/demo/outage.sh --out "$RUNNER_TEMP/demo-out" 2>&1 | tee "$RUNNER_TEMP/outage-transcript.txt"
         shell: bash
+      - name: helm upgrade keeps the generated TLS Secret
+        # upgrade.sh records the Secret's CA and the webhook caBundle, runs helm upgrade
+        # with the same values and asserts that both are unchanged and the webhook still denies.
+        run: deploy/demo/upgrade.sh 2>&1 | tee "$RUNNER_TEMP/upgrade-transcript.txt"
+        shell: bash
       - name: collect diagnostics
         if: always()
         run: |

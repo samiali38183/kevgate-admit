@@ -5,12 +5,20 @@
 {{- if eq .Values.tls.mode "helm" -}}
 {{- $secretName := include "kevgate-admit.tlsSecret" . -}}
 {{- $existing := lookup "v1" "Secret" $ns $secretName -}}
-{{- if and $existing $existing.data (index $existing.data "ca.crt") -}}
+{{- $crt := "" -}}
+{{- $key := "" -}}
+{{- if and $existing $existing.data (index $existing.data "ca.crt") (index $existing.data "tls.crt") (index $existing.data "tls.key") -}}
+{{- /* Reuse the Secret from the previous revision. It is rendered again, not omitted: Helm deletes resources that disappear from the manifest on upgrade. */ -}}
 {{- $caBundle = index $existing.data "ca.crt" -}}
+{{- $crt = index $existing.data "tls.crt" -}}
+{{- $key = index $existing.data "tls.key" -}}
 {{- else -}}
 {{- $ca := genCA (printf "%s-ca" $fullname) 3650 -}}
 {{- $cert := genSignedCert $cn nil (list $cn (printf "%s.%s" $fullname $ns) $fullname) 3650 $ca -}}
 {{- $caBundle = $ca.Cert | b64enc -}}
+{{- $crt = $cert.Cert | b64enc -}}
+{{- $key = $cert.Key | b64enc -}}
+{{- end }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -20,12 +28,11 @@ metadata:
     {{- include "kevgate-admit.labels" . | nindent 4 }}
 type: kubernetes.io/tls
 data:
-  tls.crt: {{ $cert.Cert | b64enc }}
-  tls.key: {{ $cert.Key | b64enc }}
-  ca.crt: {{ $ca.Cert | b64enc }}
+  tls.crt: {{ $crt }}
+  tls.key: {{ $key }}
+  ca.crt: {{ $caBundle }}
 ---
-{{ end -}}
-{{- else if eq .Values.tls.mode "certManager" -}}
+{{ else if eq .Values.tls.mode "certManager" -}}
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
