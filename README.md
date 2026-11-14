@@ -6,6 +6,12 @@
 
 kevgate-admit is a Kubernetes validating admission webhook, written in Go. It refuses workloads whose container images carry CISA KEV-listed vulnerabilities or a risk score over a per-namespace limit. It decides from scan reports for the exact image digest, never from tags, and it does not scan images itself.
 
+In plain terms: before Kubernetes starts a container, this gatekeeper checks whether the image has a vulnerability that attackers are known to be using, and blocks it if so.
+
+![Result of the kind cluster test: five demo workloads applied, three denied, one allowed and one admitted with a warning in audit mode, then the outage test showing that failurePolicy Fail rejects new Pods while the webhook is down and Ignore lets a Pod through that the policy would deny.](docs/img/hero-e2e.png)
+
+*What the cluster did with five demo workloads and during a webhook outage, from the `e2e-kind` CI transcript in [docs/E2E.md](docs/E2E.md). The scan data is synthetic. `scripts/make_hero.py` redraws the image from that transcript.*
+
 | | |
 |---|---|
 | Decision | allow, allow with a warning (audit mode), or deny with the findings and the rule that fired |
