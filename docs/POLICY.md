@@ -43,7 +43,7 @@ A namespace entry replaces the default rule completely. It does not inherit from
 | `requireEvidence` | `deny` | What to do when there is no usable report: `deny`, `warn` or `allow`. Applies to missing reports, tag-only images when evidence is needed, and stale reports. |
 | `allowedRegistries` | empty (any) | Registry host or host plus repository path prefix, validated with the same grammar as image references (see "Image references"). Matching is on whole path components: `ghcr.io/org` does not match `ghcr.io/org2/app`, and a prefix such as `ghcr.io/org/..` is rejected when the policy loads. `docker.io` covers Docker Hub names. |
 | `assetCriticality` | 4 | The `acr` input of the risk formula, 1 to 8, for every workload in the namespace. |
-| `maxEvidenceAge` | unset | Reports older than this count as missing. Needs a report timestamp (`CreatedAt`, else the file modification time). The kevgate HTTP provider has no timestamp, so the check is skipped for it. |
+| `maxEvidenceAge` | unset | Reports older than this count as missing. Needs a report timestamp (`CreatedAt`, else the file modification time). A timestamp more than 5 minutes in the future is rejected. With `requireSignedEvidence` only the report's own `CreatedAt` counts: a signed report without one is treated as missing evidence, because the file modification time is not covered by the signature. The kevgate HTTP provider has no timestamp, so the check is skipped for it. |
 | `ignoreUnfixed` | false | Drop findings with no fixed version before scoring, except findings in the CISA KEV catalog (or marked KEV by the evidence source), which are never dropped. See "Unfixed findings". |
 | `requireSignedEvidence` | false | Only trust scan reports whose detached signature verifies against a configured key. See "Signed evidence". |
 | `exceptions` | none | See below. At most 500 per rule. |
@@ -93,7 +93,11 @@ Reports in the store are plain files, so whoever can write there can make an ima
 - If the policy sets `requireSignedEvidence` but no key is configured, every report is treated as unauthenticated and the server logs a warning at start.
 - Without the option, signatures are not consulted for decisions even when a key is configured.
 
-Scope: this authenticates the report store. It does not verify that the image bytes are what the report describes beyond the digest key, and it does not verify image signatures (cosign or Notary). A valid signature on an old report stays valid, so keep `maxEvidenceAge` set: the age comes from the signed `CreatedAt` field when the report has one, and from the unsigned file modification time otherwise.
+Scope: this authenticates the report store. It does not verify that the image bytes are what the report describes beyond the digest key, and it does not verify image signatures (cosign or Notary). A valid signature on an old report stays valid, so keep `maxEvidenceAge` set: with `requireSignedEvidence` the age comes only from the signed `CreatedAt` field (a signed report without one is refused when `maxEvidenceAge` is set), so copying an old signed report into the store does not make it look new. Without `requireSignedEvidence` the file modification time is still used as a fallback.
+
+### Signed policy
+
+The policy is a ConfigMap, so write access to it decides enforcement. `kevgate-admit sign-policy -key priv.pem policy.yaml` writes `policy.yaml.sig` next to it, and `serve --policy-public-key-file pub.pem` then installs a policy only if that signature verifies. The check runs at start (an unsigned policy stops the server from starting) and on every reload: a policy that fails the check is logged and never installed, and the previous one stays active. A change to the `.sig` file alone also triggers a new check. The signature uses its own domain separator, so a report signature cannot stand in for a policy signature under the same key, but use a separate key for policy anyway so the scan pipeline cannot change enforcement. Scope: it protects the policy file only. The KEV catalog and EPSS files stay unsigned, and a signature does not stop a replay of an older, validly signed policy. With the Helm chart, set `policySigning.existingConfigMap` (keys `policy.yaml` and `policy.yaml.sig`) and `policySigning.publicKey.existingConfigMap`.
 
 ## Exceptions
 

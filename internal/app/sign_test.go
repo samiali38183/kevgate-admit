@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func runCLI(args ...string) (int, string, string) {
@@ -259,5 +260,90 @@ func TestServeRejectsBadEvidenceKey(t *testing.T) {
 		if err := Serve(context.Background(), cfg, newLogger(io.Discard, "error"), nil); err == nil || !strings.Contains(err.Error(), "-evidence-public-key-file") {
 			t.Errorf("%s: err = %v", name, err)
 		}
+	}
+}
+
+func TestPolicyCLIAndSignedPolicyServing(t *testing.T) {
+	keys := t.TempDir()
+	priv, pub := filepath.Join(keys, "priv.pem"), filepath.Join(keys, "pub.pem")
+	if c, _, e := runCLI("keygen", "-type", "ed25519", "-private-out", priv, "-public-out", pub); c != 0 {
+		t.Fatal(e)
+	}
+	pol := filepath.Join(t.TempDir(), "policy.yaml")
+	good := mustRead(t, demoPath("policy.yaml"))
+	if err := os.WriteFile(pol, good, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A policy the webhook would refuse to load is not signed.
+	bad := filepath.Join(t.TempDir(), "bad.yaml")
+	if err := os.WriteFile(bad, []byte("version: 1\ndefault:\n  maxRisk: 500\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if c, _, _ := runCLI("sign-policy", "-key", priv, bad); c == 0 {
+		t.Fatal("signed an invalid policy")
+	}
+	if c, _, _ := runCLI("verify-policy", "-public-key", pub, pol); c == 0 {
+		t.Fatal("verified a policy with no signature")
+	}
+	if c, _, e := runCLI("sign-policy", "-key", priv, pol); c != 0 {
+		t.Fatal(e)
+	}
+	if c, o, e := runCLI("verify-policy", "-public-key", pub, pol); c != 0 || !strings.Contains(o, "OK") {
+		t.Fatalf("verify: %d %q %q", c, o, e)
+	}
+
+	// The server starts, enforces the signed policy (KEV image denied) ...
+	s := startWith(t, pol, demoPath("reports"), "-policy-public-key-file", pub)
+	kevImg := "registry.example.com/demo/kev-vulnerable@" + dKEV
+	if r := s.validate(t, "demo-enforce", kevImg); r.Allowed {
+		t.Fatalf("signed policy not enforced: %+v", r)
+	}
+	// ... and an edit that weakens it (denyKev off, limit raised) without a new
+	// signature is never installed, so the KEV image stays denied.
+	weak := strings.NewReplacer("denyKev: true", "denyKev: false", "maxRisk: 40", "maxRisk: 100").Replace(string(good))
+	if weak == string(good) {
+		t.Fatal("test edit changed nothing; update it to match deploy/demo/policy.yaml")
+	}
+	if err := os.WriteFile(pol, []byte(weak), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(600 * time.Millisecond) // several 50 ms reload ticks
+	if r := s.validate(t, "demo-enforce", kevImg); r.Allowed {
+		t.Fatalf("an unsigned policy edit took effect: %+v", r)
+	}
+	// Signing the edit makes it effective, which shows the previous check was the signature and not a stuck reload.
+	if c, _, e := runCLI("sign-policy", "-key", priv, pol); c != 0 {
+		t.Fatal(e)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if r := s.validate(t, "demo-enforce", kevImg); r.Allowed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("a correctly signed policy was never installed")
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func TestServeRefusesUnsignedPolicyAtStart(t *testing.T) {
+	keys := t.TempDir()
+	priv, pub := filepath.Join(keys, "priv.pem"), filepath.Join(keys, "pub.pem")
+	if c, _, e := runCLI("keygen", "-private-out", priv, "-public-out", pub); c != 0 {
+		t.Fatal(e)
+	}
+	cfg, err := ParseServeFlags([]string{
+		"-listen", "127.0.0.1:0", "-metrics-listen", "127.0.0.1:0", "-self-signed",
+		"-policy-file", demoPath("policy.yaml"), "-kev-file", demoPath("kev-demo.json"),
+		"-evidence-dir", demoPath("reports"), "-policy-public-key-file", pub,
+	}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = Serve(context.Background(), cfg, newLogger(io.Discard, "error"), nil)
+	if err == nil || !strings.Contains(err.Error(), "policy signature") {
+		t.Fatalf("started with an unsigned policy: %v", err)
 	}
 }

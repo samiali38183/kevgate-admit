@@ -37,8 +37,9 @@ const Suffix = ".sig"
 const MaxSignatureFileBytes = 4096
 
 const (
-	domainSeparator = "kevgate-admit report signature v1\n"
-	maxKeys         = 8
+	domainSeparator       = "kevgate-admit report signature v1\n"
+	policyDomainSeparator = "kevgate-admit policy signature v1\n"
+	maxKeys               = 8
 )
 
 // ErrInvalid means the signature does not verify against any trusted key, or
@@ -52,6 +53,15 @@ func Message(digest string, report []byte) []byte {
 	m = append(m, digest...)
 	m = append(m, '\n')
 	return append(m, report...)
+}
+
+// PolicyMessage builds the byte string that is signed for a policy file. Its
+// domain separator differs from the report one, so a signed report can never
+// be presented as a signed policy or the reverse, even under the same key.
+func PolicyMessage(policy []byte) []byte {
+	m := make([]byte, 0, len(policyDomainSeparator)+len(policy))
+	m = append(m, policyDomainSeparator...)
+	return append(m, policy...)
 }
 
 // Kind names a supported key type.
@@ -112,7 +122,15 @@ func ParsePrivateKey(data []byte) (crypto.Signer, error) {
 
 // Sign returns the base64 signature file content for a report.
 func Sign(key crypto.Signer, digest string, report []byte) ([]byte, error) {
-	msg := Message(digest, report)
+	return signMessage(key, Message(digest, report))
+}
+
+// SignPolicy returns the base64 signature file content for a policy file.
+func SignPolicy(key crypto.Signer, policy []byte) ([]byte, error) {
+	return signMessage(key, PolicyMessage(policy))
+}
+
+func signMessage(key crypto.Signer, msg []byte) ([]byte, error) {
 	var sig []byte
 	var err error
 	switch key.(type) {
@@ -183,6 +201,15 @@ func (v *Verifier) Keys() int { return len(v.keys) }
 // Verify checks sigFile (the content of the .sig file) for the report stored
 // under digest. Every failure wraps ErrInvalid.
 func (v *Verifier) Verify(digest string, report, sigFile []byte) error {
+	return v.verifyMessage(Message(digest, report), sigFile)
+}
+
+// VerifyPolicy checks sigFile for a policy file. Every failure wraps ErrInvalid.
+func (v *Verifier) VerifyPolicy(policy, sigFile []byte) error {
+	return v.verifyMessage(PolicyMessage(policy), sigFile)
+}
+
+func (v *Verifier) verifyMessage(msg, sigFile []byte) error {
 	if len(sigFile) > MaxSignatureFileBytes {
 		return fmt.Errorf("%w: signature file too large", ErrInvalid)
 	}
@@ -190,7 +217,6 @@ func (v *Verifier) Verify(digest string, report, sigFile []byte) error {
 	if err != nil || len(sig) == 0 {
 		return fmt.Errorf("%w: signature is not valid base64", ErrInvalid)
 	}
-	msg := Message(digest, report)
 	sum := sha256.Sum256(msg)
 	for _, k := range v.keys {
 		switch pk := k.(type) {

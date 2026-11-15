@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Signed policy: `sign-policy` and `verify-policy` subcommands, `--policy-public-key-file`, and chart values `policySigning.*`. With the flag the policy must carry a valid detached signature at start and on every reload; an edited or unsigned policy is never installed and the previous one stays. Domain-separated from report signatures. The Go tests run a TLS server, edit the policy without re-signing, and check enforcement does not change.
+- Freshness of signed evidence: with `requireSignedEvidence` and `maxEvidenceAge`, the age comes only from the report's own `CreatedAt`. Before, a signed report with no `CreatedAt` took its age from the file modification time, so an old signed report copied in today looked new. A report timestamp more than 5 minutes in the future is now refused, signed or not.
+- `internal/reload` supports a companion file (used for the policy signature).
+
 - With `tls.mode=helm`, `helm upgrade` now keeps the generated TLS Secret and the webhook `caBundle`. The chart reads the existing Secret with `lookup` and renders it unchanged. Before this, the Secret dropped out of the manifest on the first upgrade and Helm deleted it. `deploy/demo/upgrade.sh` checks this in the `e2e-kind` workflow.
 - The end-to-end transcripts moved from the README to `docs/E2E.md`.
 

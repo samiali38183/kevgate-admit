@@ -11,6 +11,7 @@ import (
 
 	"github.com/samiali38183/kevgate-admit/internal/evidence"
 	"github.com/samiali38183/kevgate-admit/internal/evsign"
+	"github.com/samiali38183/kevgate-admit/internal/policy"
 )
 
 // maxSignedReportBytes bounds what sign-report and verify-report read, the
@@ -197,5 +198,96 @@ func verifyReport(args []string, stdout, stderr io.Writer) int {
 	if failed > 0 {
 		return 1
 	}
+	return 0
+}
+
+// maxPolicyBytes mirrors the limit the webhook applies to a policy file.
+const maxPolicyBytes = policy.MaxPolicyBytes
+
+func signPolicy(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("sign-policy", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	key := fs.String("key", "", "PKCS#8 PEM private key (Ed25519 or ECDSA P-256)")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if *key == "" || fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "usage: kevgate-admit sign-policy -key private.pem policy.yaml")
+		return 2
+	}
+	keyPEM, err := os.ReadFile(*key) // #nosec G304 -- operator supplied path
+	if err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
+	}
+	signer, err := evsign.ParsePrivateKey(keyPEM)
+	if err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
+	}
+	path := fs.Arg(0)
+	data, err := readBounded(path, maxPolicyBytes)
+	if err == nil {
+		// Refuse to sign something the webhook would not load.
+		if _, perr := policy.Parse(data); perr != nil {
+			err = fmt.Errorf("%s is not a valid policy: %w", path, perr)
+		}
+	}
+	var sig []byte
+	if err == nil {
+		sig, err = evsign.SignPolicy(signer, data)
+	}
+	if err == nil {
+		err = os.WriteFile(path+evsign.Suffix, sig, 0o644) // #nosec G306 G703 -- a signature is public; the path is an operator supplied argument of a CLI
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "signed %s -> %s%s\n", path, path, evsign.Suffix)
+	return 0
+}
+
+func verifyPolicy(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("verify-policy", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	pub := fs.String("public-key", "", "PEM public key file (one or more keys)")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if *pub == "" || fs.NArg() != 1 {
+		fmt.Fprintln(stderr, "usage: kevgate-admit verify-policy -public-key public.pem policy.yaml")
+		return 2
+	}
+	pubPEM, err := os.ReadFile(*pub) // #nosec G304 -- operator supplied path
+	if err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
+	}
+	v, err := evsign.NewVerifier(pubPEM)
+	if err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return 1
+	}
+	path := fs.Arg(0)
+	var data, sig []byte
+	data, err = readBounded(path, maxPolicyBytes)
+	if err == nil {
+		sig, err = readBounded(path+evsign.Suffix, evsign.MaxSignatureFileBytes)
+	}
+	if err == nil {
+		err = v.VerifyPolicy(data, sig)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "FAIL %s: %v\n", path, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "OK   %s\n", path)
 	return 0
 }

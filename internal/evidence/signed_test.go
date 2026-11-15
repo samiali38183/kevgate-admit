@@ -136,3 +136,19 @@ func TestDirProviderSignatureEdgeCases(t *testing.T) {
 		t.Fatalf("no verifier: %+v %v", ev, err)
 	}
 }
+
+func TestScannedAtSourceIsRecorded(t *testing.T) {
+	dir := t.TempDir()
+	p := &DirProvider{Dir: dir}
+	writeReport(t, dir, dA, report(dA)) // the test report has a CreatedAt of its own
+	ev, err := p.Lookup(context.Background(), dA)
+	if err != nil || !ev.ScannedAtFromReport || ev.ScannedAt.Year() != 2026 {
+		t.Fatalf("report timestamp: %+v %v", ev, err)
+	}
+	// No CreatedAt: the time is the file's mtime and must not be marked as signed content.
+	writeReport(t, dir, dB, strings.Replace(report(dB), `"CreatedAt":"2026-11-01T00:00:00Z",`, "", 1))
+	ev, err = p.Lookup(context.Background(), dB)
+	if err != nil || ev.ScannedAtFromReport {
+		t.Fatalf("mtime fallback marked as report time: %+v %v", ev, err)
+	}
+}

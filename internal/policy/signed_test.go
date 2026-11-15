@@ -3,6 +3,7 @@ package policy
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/samiali38183/kevgate-admit/internal/evidence"
 )
@@ -157,5 +158,78 @@ func TestRequiresSignedEvidence(t *testing.T) {
 func TestRequireSignedEvidenceRejectsNonBool(t *testing.T) {
 	if _, err := Parse([]byte("version: 1\ndefault:\n  requireSignedEvidence: sometimes\n")); err == nil {
 		t.Fatal("non boolean accepted")
+	}
+}
+
+func TestSignedEvidenceNeedsItsOwnTimestampForMaxAge(t *testing.T) {
+	policyYAML := "version: 1\ndefault:\n  denyKev: true\n  maxEvidenceAge: 24h\n  requireSignedEvidence: true\n"
+	tests := []struct {
+		name     string
+		mutate   func(*evidence.Evidence)
+		outcome  Outcome
+		contains string
+	}{
+		{
+			name:    "fresh timestamp inside the signed report is accepted",
+			mutate:  func(ev *evidence.Evidence) { ev.ScannedAtFromReport = true },
+			outcome: OutcomeAllow,
+		},
+		{
+			// An old signed report copied into the store today: its mtime is new, so
+			// without this rule the age check would pass it.
+			name:     "timestamp that is only the file mtime does not prove freshness",
+			mutate:   func(ev *evidence.Evidence) { ev.ScannedAtFromReport = false },
+			outcome:  OutcomeDeny,
+			contains: "no timestamp of its own",
+		},
+		{
+			name: "old timestamp inside the report is stale",
+			mutate: func(ev *evidence.Evidence) {
+				ev.ScannedAtFromReport = true
+				ev.ScannedAt = now.Add(-48 * time.Hour)
+			},
+			outcome:  OutcomeDeny,
+			contains: "stale",
+		},
+		{
+			name: "timestamp far in the future is rejected, not treated as forever fresh",
+			mutate: func(ev *evidence.Evidence) {
+				ev.ScannedAtFromReport = true
+				ev.ScannedAt = now.Add(24 * 365 * time.Hour)
+			},
+			outcome:  OutcomeDeny,
+			contains: "dated in the future",
+		},
+		{
+			name: "small clock skew is tolerated",
+			mutate: func(ev *evidence.Evidence) {
+				ev.ScannedAtFromReport = true
+				ev.ScannedAt = now.Add(2 * time.Minute)
+			},
+			outcome: OutcomeAllow,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ev := signedEv(evidence.SigVerified, "", "CVE-2024-0001")
+			tc.mutate(ev)
+			d := mustParse(t, policyYAML).Evaluate(Env{Namespace: "ns", Now: now, FailMode: FailClosed},
+				[]ImageInput{img(t, pinned, ev, nil)})
+			if d.Outcome() != tc.outcome {
+				t.Fatalf("outcome = %s, want %s\n%s", d.Outcome(), tc.outcome, d.Message())
+			}
+			if tc.contains != "" && !strings.Contains(d.Message(), tc.contains) {
+				t.Errorf("message lacks %q:\n%s", tc.contains, d.Message())
+			}
+		})
+	}
+}
+
+func TestFutureTimestampRejectedWithoutSigningToo(t *testing.T) {
+	ev := evd(now.Add(24 * 365 * time.Hour))
+	d := mustParse(t, "version: 1\ndefault:\n  maxEvidenceAge: 24h\n").Evaluate(
+		Env{Namespace: "ns", Now: now, FailMode: FailClosed}, []ImageInput{img(t, pinned, ev, nil)})
+	if d.Outcome() != OutcomeDeny || !strings.Contains(d.Message(), "dated in the future") {
+		t.Fatalf("%s\n%s", d.Outcome(), d.Message())
 	}
 }

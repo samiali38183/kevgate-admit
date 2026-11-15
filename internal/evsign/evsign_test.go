@@ -197,3 +197,39 @@ func TestParsePrivateKeyRejects(t *testing.T) {
 		t.Error("GenerateKey accepted an unknown kind")
 	}
 }
+
+func TestPolicySignatureRoundTripAndDomainSeparation(t *testing.T) {
+	for _, kind := range []Kind{Ed25519, ECDSA} {
+		t.Run(string(kind), func(t *testing.T) {
+			privPEM, pub := keypair(t, kind)
+			priv, err := ParsePrivateKey(privPEM)
+			if err != nil {
+				t.Fatal(err)
+			}
+			v, err := NewVerifier(pub)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pol := []byte("version: 1\ndefault:\n  denyKev: true\n")
+			sig, err := SignPolicy(priv, pol)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := v.VerifyPolicy(pol, sig); err != nil {
+				t.Fatalf("valid policy signature: %v", err)
+			}
+			edited := []byte("version: 1\ndefault:\n  denyKev: false\n")
+			if err := v.VerifyPolicy(edited, sig); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("edited policy accepted: %v", err)
+			}
+			// Same key signs reports and policies. Neither signature may stand in for the other.
+			if err := v.Verify(dA, pol, sig); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("a policy signature verified as a report signature: %v", err)
+			}
+			repSig := signWith(t, privPEM, dA, pol)
+			if err := v.VerifyPolicy(pol, repSig); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("a report signature verified as a policy signature: %v", err)
+			}
+		})
+	}
+}

@@ -51,6 +51,18 @@ policy:
     denyKev: true
     maxRisk: 70
 
+# Signed policy. By default the policy above is rendered into a ConfigMap that
+# anyone with write access to it can change. To require a signature instead:
+# keep the policy in a ConfigMap you manage with keys policy.yaml and
+# policy.yaml.sig (made with `kevgate-admit sign-policy`), and give the public key.
+# The webhook then installs only a policy whose signature verifies and keeps the
+# previous one otherwise. The `policy` values above are ignored in that case.
+policySigning:
+  existingConfigMap: ""
+  publicKey:
+    existingConfigMap: ""
+    key: policy-public-key.pem
+
 kev:
   # ConfigMap holding known_exploited_vulnerabilities.json. Create it from the
   # catalog downloaded with `kevgate-admit kev-refresh`. The full catalog is

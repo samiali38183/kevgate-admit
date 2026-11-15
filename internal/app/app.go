@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -54,6 +55,10 @@ type Config struct {
 	// When set, report signatures are verified; policies decide with
 	// requireSignedEvidence.
 	EvidencePublicKey string
+	// PolicyPublicKey is a PEM file of public keys that sign the policy. When
+	// set, <policy-file>.sig must verify at start and at every reload; a policy
+	// that does not verify is never installed and the previous one stays.
+	PolicyPublicKey string
 
 	FailMode        policy.FailMode
 	EvalTimeout     time.Duration
@@ -96,6 +101,10 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return signReport(args[1:], stdout, stderr)
 	case "verify-report":
 		return verifyReport(args[1:], stdout, stderr)
+	case "sign-policy":
+		return signPolicy(args[1:], stdout, stderr)
+	case "verify-policy":
+		return verifyPolicy(args[1:], stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, "kevgate-admit", Version)
 		return 0
@@ -118,6 +127,8 @@ commands:
   keygen        create a report-signing key pair (Ed25519 or ECDSA P-256)
   sign-report   write a detached signature next to each scan report
   verify-report check a report signature offline
+  sign-policy   write a detached signature next to a policy file
+  verify-policy check a policy signature offline
   version       print the version
 `)
 }
@@ -142,6 +153,7 @@ func ParseServeFlags(args []string, out io.Writer) (Config, error) {
 	fs.StringVar(&c.EvidenceURL, "evidence-url", "", "optional kevgate base URL used when no report file exists")
 	fs.StringVar(&c.EvidenceToken, "evidence-token-file", "", "file holding a bearer token for -evidence-url")
 	fs.StringVar(&c.EvidencePublicKey, "evidence-public-key-file", "", "PEM public key(s) (Ed25519 or ECDSA P-256) that sign reports; enables <report>.json.sig verification for policies with requireSignedEvidence")
+	fs.StringVar(&c.PolicyPublicKey, "policy-public-key-file", "", "PEM public key(s) that sign the policy; when set, <policy-file>.sig must verify at start and on every reload")
 	fs.StringVar(&fail, "fail-mode", "closed", "closed: deny when the evidence source fails; open: allow with a warning")
 	fs.DurationVar(&c.EvalTimeout, "eval-timeout", admission.DefaultEvalTimeout, "time budget per admission request (keep below the webhook timeoutSeconds)")
 	fs.DurationVar(&c.LookupTimeout, "lookup-timeout", admission.DefaultLookupTimeout, "time budget per evidence lookup")
@@ -210,7 +222,24 @@ func Serve(ctx context.Context, cfg Config, log *slog.Logger, ready chan<- Addrs
 		}
 	}
 
-	pol, err := reload.New("policy", cfg.PolicyFile, policy.MaxPolicyBytes, policy.Parse, m)
+	var polOpts []reload.Option
+	if cfg.PolicyPublicKey != "" {
+		keyPEM, err := os.ReadFile(cfg.PolicyPublicKey)
+		if err != nil {
+			return fmt.Errorf("policy public key: %w", err)
+		}
+		v, err := evsign.NewVerifier(keyPEM)
+		if err != nil {
+			return fmt.Errorf("policy public key: %w", err)
+		}
+		polOpts = append(polOpts, reload.WithCompanion(cfg.PolicyFile+evsign.Suffix, func(data, sig []byte) error {
+			if sig == nil {
+				return fmt.Errorf("policy signature %s%s is missing or unreadable", filepath.Base(cfg.PolicyFile), evsign.Suffix)
+			}
+			return v.VerifyPolicy(data, sig)
+		}))
+	}
+	pol, err := reload.New("policy", cfg.PolicyFile, policy.MaxPolicyBytes, policy.Parse, m, polOpts...)
 	if err != nil {
 		return err
 	}
@@ -335,7 +364,7 @@ func Serve(ctx context.Context, cfg Config, log *slog.Logger, ready chan<- Addrs
 	go func() { errc <- wrapServe(metSrv.Serve(metLn)) }()
 	log.Info("kevgate-admit started",
 		"version", Version, "admission", admLn.Addr().String(), "metrics", metLn.Addr().String(),
-		"fail_mode", string(cfg.FailMode), "provider", provider.Name(), "evidence_signatures", cfg.EvidencePublicKey != "", "kev_entries", catalog.Get().Len())
+		"fail_mode", string(cfg.FailMode), "provider", provider.Name(), "evidence_signatures", cfg.EvidencePublicKey != "", "signed_policy", cfg.PolicyPublicKey != "", "kev_entries", catalog.Get().Len())
 	if ready != nil {
 		ready <- Addrs{Admission: admLn.Addr().String(), Metrics: metLn.Addr().String(), CAPEM: caPEM}
 	}
