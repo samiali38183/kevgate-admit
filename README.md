@@ -38,6 +38,19 @@ kevgate-admit: request denied by policy (namespace "demo-enforce", scope "demo-e
 - The `e2e-kind` workflow installs the Helm chart on a kind cluster and asserts allow, deny and audit-warn outcomes, a `helm upgrade` that keeps the TLS Secret, and the outage behaviour above. `failurePolicy: Ignore` admits a Pod the policy would deny, so it is a bypass window and not a safe default.
 - The `v0.1.0` image is on GHCR, signed with cosign (keyless) and attested with a CycloneDX SBOM; the verify command is in [docs/USAGE.md](docs/USAGE.md#published-image). The signature shows what built the image. The webhook does not check image signatures at admission.
 
+## Design
+
+- One `POST /validate` handler (`internal/admission/handler.go`) answers AdmissionReview v1 for CREATE and UPDATE; on UPDATE only images not present in the old object are judged (`internal/admission/decode.go`). Containers, initContainers and ephemeralContainers are all collected.
+- Image references are parsed with an OCI-grammar parser that never resolves tags (`internal/imageref/imageref.go`). Only a `@sha256:`/`@sha512:` digest is looked up; a tag-only image is handled by the `requireDigest` and `requireEvidence` rules, not by contacting a registry.
+- Evidence comes from a `Provider` keyed by digest (`internal/evidence/`): `DirProvider` reads Trivy JSON named `<algo>-<hex>.json` from `-evidence-dir` and rejects a report whose own digests name a different image; `HTTPProvider` optionally asks a kevgate service via `GET /queue?asset=<digest>`. With both set they form a chain (`internal/app/app.go`, `buildProvider`).
+- KEV membership is a lookup in the CISA catalog JSON loaded from `-kev-file` (`internal/kev/kev.go`); `kevgate-admit kev-refresh` downloads it. Risk scoring is in `internal/risk/risk.go`, with optional EPSS from `-epss-file`.
+- Policy, KEV, EPSS and the TLS certificate are polled for changes (`internal/reload/reload.go`, `internal/tlsutil/tlsutil.go`); a file that fails to parse or verify keeps the previous version in place. With `-policy-public-key-file`, `<policy>.sig` must verify at start and on every reload (`internal/evsign/evsign.go`).
+- Signed reports: with `-evidence-public-key-file`, `<report>.json.sig` is checked and the result recorded; a policy with `requireSignedEvidence` treats an unverified report as missing evidence (`internal/policy/eval.go`, `findings`).
+- Two separate fail controls: `-fail-mode closed|open` decides what the webhook returns when a lookup errors or the handler panics (deny, or allow with a warning); the chart's `failurePolicy` decides what the API server does when the webhook is unreachable. Defaults are `closed` and `Fail`.
+- Per-request guards: body limit, eval and lookup timeouts, and a bounded number of in-flight lookups across all requests (`internal/admission/handler.go`).
+- TLS: `-self-signed` generates an in-memory ECDSA P-256 certificate for local use; otherwise the serving pair is read from files and reloaded. The Helm chart (`deploy/helm/kevgate-admit/templates/webhook.yaml`) supports `tls.mode` `helm` (chart-generated CA, Secret reused on upgrade via `lookup`), `certManager` or `existingSecret`, and excludes its own namespace and `excludedNamespaces` from the webhook.
+- Metrics, `/healthz` and `/readyz` are served on a separate plain-HTTP listener (`internal/metrics/metrics.go`, `internal/app/app.go`).
+
 ## Limits
 
 It does not scan images, does not verify image signatures (Kyverno `verifyImages` and the Sigstore policy-controller do that), and has no multi-replica or production design. The KEV catalog file is unsigned. The cert-manager TLS mode and the signed-policy path are not covered by the kind run. Everything runs in kind and Go tests; nothing here has been deployed to a production cluster. The full list is in [docs/USAGE.md](docs/USAGE.md#limitations).
