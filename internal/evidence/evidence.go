@@ -44,7 +44,12 @@ type Evidence struct {
 	Digest    string
 	Source    string
 	ScannedAt time.Time // zero when the source does not say
-	Findings  []vuln.Finding
+	// ScannedAtFromReport is true when ScannedAt is the timestamp inside the
+	// report body, which a verified signature covers. False means it is the
+	// file modification time, which anyone with write access to the store can
+	// set to anything, so it says nothing about how old a signed report is.
+	ScannedAtFromReport bool
+	Findings            []vuln.Finding
 
 	// Signature says whether the report was authenticated. Policies that set
 	// requireSignedEvidence ignore a report unless it is SigVerified.
@@ -143,10 +148,11 @@ func (p *DirProvider) Lookup(ctx context.Context, digest string) (*Evidence, err
 		}
 	}
 	at := rep.CreatedAt
-	if at.IsZero() {
+	fromReport := !at.IsZero()
+	if !fromReport {
 		at = fi.ModTime().UTC()
 	}
-	ev := &Evidence{Digest: digest, Source: "trivy-dir", ScannedAt: at, Findings: rep.Findings}
+	ev := &Evidence{Digest: digest, Source: "trivy-dir", ScannedAt: at, ScannedAtFromReport: fromReport, Findings: rep.Findings}
 	if p.Verifier != nil {
 		ev.Signature, ev.SigDetail = p.checkSignature(path, digest, data)
 	}

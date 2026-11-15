@@ -12,6 +12,10 @@ kevgateTokenSecret:
   name: kevgate-token
 serviceMonitor:
   enabled: true
+policySigning:
+  existingConfigMap: signed-policy
+  publicKey:
+    existingConfigMap: policy-signing-key
 evidence:
   existingClaim: scan-reports
   publicKey:

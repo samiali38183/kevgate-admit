@@ -268,7 +268,17 @@ func (e *evaluator) findings(ref imageref.Ref, name string, ev *evidence.Evidenc
 		e.missing(ref, name, unsignedDetail(ev))
 		return
 	}
+	if e.rule.MaxEvidenceAge > 0 && e.rule.RequireSignedEvidence && !ev.ScannedAtFromReport {
+		// The signature covers the report body, not the file's modification time.
+		// An old signed report copied to the store today would otherwise look new.
+		e.missing(ref, name, "signed report has no timestamp of its own, so maxEvidenceAge cannot be enforced; signed evidence needs a CreatedAt")
+		return
+	}
 	if e.rule.MaxEvidenceAge > 0 && !ev.ScannedAt.IsZero() {
+		if ev.ScannedAt.After(e.env.Now.Add(maxClockSkew)) {
+			e.missing(ref, name, "scan report is dated in the future; its timestamp cannot be trusted")
+			return
+		}
 		if age := e.env.Now.Sub(ev.ScannedAt); age > e.rule.MaxEvidenceAge {
 			e.missing(ref, name, fmt.Sprintf("scan report is stale (%s old, limit %s)", roundAge(age), e.rule.MaxEvidenceAge))
 			return
@@ -329,6 +339,10 @@ func (e *evaluator) findings(ref imageref.Ref, name string, ev *evidence.Evidenc
 }
 
 // unsignedDetail explains why a report is not trusted, without echoing paths.
+// maxClockSkew is how far into the future a report timestamp may be before it
+// is rejected.
+const maxClockSkew = 5 * time.Minute
+
 func unsignedDetail(ev *evidence.Evidence) string {
 	switch ev.Signature {
 	case evidence.SigMissing:

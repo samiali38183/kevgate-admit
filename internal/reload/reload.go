@@ -27,6 +27,12 @@ type File[T any] struct {
 	parse    func([]byte) (*T, error)
 	obs      Observer
 
+	// Optional companion file (a detached signature). When set, check must
+	// accept the pair before the content is parsed, and a change to the
+	// companion alone triggers a new attempt.
+	companion string
+	check     func(data, companion []byte) error
+
 	cur   atomic.Pointer[T]
 	state atomic.Pointer[fileState]
 	bad   atomic.Pointer[fileState]
@@ -36,11 +42,36 @@ type fileState struct {
 	mtime time.Time
 	size  int64
 	sum   [sha256.Size]byte
+	cm    time.Time // companion mtime, zero when absent
+	csize int64
+}
+
+// MaxCompanionBytes bounds the companion file.
+const MaxCompanionBytes = 4096
+
+// Option customises New.
+type Option func(*options)
+
+type options struct {
+	companion string
+	check     func(data, companion []byte) error
+}
+
+// WithCompanion makes the file load only if check(data, companionBytes)
+// returns nil. A missing companion is passed as nil. check runs before parse,
+// so an unverified file is never parsed. If the companion changes, the file is
+// re-checked even when its own content did not.
+func WithCompanion(path string, check func(data, companion []byte) error) Option {
+	return func(o *options) { o.companion, o.check = path, check }
 }
 
 // New loads the file once and fails if that first load fails.
-func New[T any](name, path string, maxBytes int64, parse func([]byte) (*T, error), obs Observer) (*File[T], error) {
-	f := &File[T]{name: name, path: path, maxBytes: maxBytes, parse: parse, obs: obs}
+func New[T any](name, path string, maxBytes int64, parse func([]byte) (*T, error), obs Observer, opts ...Option) (*File[T], error) {
+	var o options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	f := &File[T]{name: name, path: path, maxBytes: maxBytes, parse: parse, obs: obs, companion: o.companion, check: o.check}
 	if _, err := f.load(true); err != nil {
 		return nil, err
 	}
@@ -76,9 +107,16 @@ func (f *File[T]) load(first bool) (bool, error) {
 	if !fi.Mode().IsRegular() {
 		return false, fmt.Errorf("%s: %s is not a regular file", f.name, f.path)
 	}
+	var cm time.Time
+	var csize int64
+	if f.companion != "" {
+		if cfi, err := os.Stat(f.companion); err == nil {
+			cm, csize = cfi.ModTime(), cfi.Size()
+		}
+	}
 	if !first {
 		for _, st := range []*fileState{f.state.Load(), f.bad.Load()} {
-			if st != nil && st.mtime.Equal(fi.ModTime()) && st.size == fi.Size() {
+			if st != nil && st.mtime.Equal(fi.ModTime()) && st.size == fi.Size() && st.cm.Equal(cm) && st.csize == csize {
 				return false, nil
 			}
 		}
@@ -102,8 +140,20 @@ func (f *File[T]) load(first bool) (bool, error) {
 	if f.maxBytes > 0 && int64(len(data)) > f.maxBytes {
 		return false, fmt.Errorf("%s: file larger than %d bytes", f.name, f.maxBytes)
 	}
-	st := &fileState{mtime: fi.ModTime(), size: int64(len(data)), sum: sha256.Sum256(data)}
-	if old := f.state.Load(); !first && old != nil && old.sum == st.sum {
+	st := &fileState{mtime: fi.ModTime(), size: int64(len(data)), sum: sha256.Sum256(data), cm: cm, csize: csize}
+	if f.check != nil {
+		var comp []byte
+		if f.companion != "" {
+			if c, err := readCompanion(f.companion); err == nil {
+				comp = c
+			}
+		}
+		if err := f.check(data, comp); err != nil {
+			f.bad.Store(st)
+			return false, fmt.Errorf("%s: %w", f.name, err)
+		}
+	}
+	if old := f.state.Load(); !first && old != nil && old.sum == st.sum && old.cm.Equal(cm) && old.csize == csize {
 		f.state.Store(st) // same content, newer mtime
 		return false, nil
 	}
@@ -136,4 +186,17 @@ func (f *File[T]) Run(ctx context.Context, interval time.Duration, onError func(
 			}
 		}
 	}
+}
+
+func readCompanion(path string) ([]byte, error) {
+	fh, err := os.Open(path) // #nosec G304 -- operator supplied path next to the policy file
+	if err != nil {
+		return nil, err
+	}
+	defer fh.Close()
+	data, err := io.ReadAll(io.LimitReader(fh, MaxCompanionBytes+1))
+	if err != nil || len(data) > MaxCompanionBytes {
+		return nil, errors.New("companion unreadable or too large")
+	}
+	return data, nil
 }

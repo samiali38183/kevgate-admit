@@ -177,3 +177,63 @@ func TestRunPollsUntilCancelled(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// check accepts the data only when the companion is exactly "ok:" + data.
+func pairCheck(data, comp []byte) error {
+	if comp == nil {
+		return errors.New("no companion")
+	}
+	if string(comp) != "ok:"+string(data) {
+		return errors.New("companion does not match")
+	}
+	return nil
+}
+
+func TestCompanionGatesLoadAndReload(t *testing.T) {
+	dir := t.TempDir()
+	path, comp := filepath.Join(dir, "f.txt"), filepath.Join(dir, "f.txt.sig")
+	t0 := time.Now().Add(-time.Hour)
+
+	// Without a valid companion the first load fails.
+	write(t, path, "one", t0)
+	if _, err := New("test", path, 100, parseUpper, nil, WithCompanion(comp, pairCheck)); err == nil {
+		t.Fatal("loaded without a companion")
+	}
+	write(t, comp, "ok:uno", t0)
+	if _, err := New("test", path, 100, parseUpper, nil, WithCompanion(comp, pairCheck)); err == nil {
+		t.Fatal("loaded with a wrong companion")
+	}
+	write(t, comp, "ok:one", t0)
+	o := &obs{}
+	f, err := New("test", path, 100, parseUpper, o, WithCompanion(comp, pairCheck))
+	if err != nil || *f.Get() != "one" {
+		t.Fatalf("valid pair: %v", err)
+	}
+
+	// Content changes, the companion does not: rejected, last good stays.
+	write(t, path, "two", t0.Add(time.Minute))
+	if ch, err := f.Reload(); ch || err == nil || *f.Get() != "one" {
+		t.Fatalf("unsigned edit installed: changed=%v err=%v cur=%q", ch, err, *f.Get())
+	}
+	// Same rejected state is not retried as a new change, but the companion arriving later is picked up
+	// even though the main file did not change again.
+	write(t, comp, "ok:two", t0.Add(2*time.Minute))
+	if ch, err := f.Reload(); !ch || err != nil || *f.Get() != "two" {
+		t.Fatalf("companion arriving later not picked up: changed=%v err=%v cur=%q", ch, err, *f.Get())
+	}
+	// Only the companion changes to something invalid: the file is re-checked.
+	write(t, comp, "ok:forged", t0.Add(3*time.Minute))
+	if _, err := f.Reload(); err == nil {
+		t.Fatal("a broken companion was not noticed")
+	}
+	if *f.Get() != "two" {
+		t.Fatalf("last good lost: %q", *f.Get())
+	}
+	// A missing companion later is also a failure that keeps the last good value.
+	if err := os.Remove(comp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Reload(); err == nil || *f.Get() != "two" {
+		t.Fatalf("removed companion: err=%v cur=%q", err, *f.Get())
+	}
+}
